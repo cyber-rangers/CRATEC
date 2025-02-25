@@ -1,36 +1,108 @@
 <script lang="ts">
-	import { FaPlus } from 'svelte-icons/fa';
-	import { deviceStore } from '$lib/stores/deviceStore';
-	import { get, writable } from 'svelte/store';
-	import { invoke } from '@tauri-apps/api/tauri';
+	import { FaPlus } from "svelte-icons/fa";
+	import {
+		getModalStore,
+		getToastStore,
+		popup,
+	} from "@skeletonlabs/skeleton";
+	import { RadioGroup, RadioItem } from "@skeletonlabs/skeleton";
+	import { invoke } from "@tauri-apps/api/core";
+	import { onMount } from "svelte";
+	import type {
+		ModalSettings,
+		ToastSettings,
+		PopupSettings,
+	} from "@skeletonlabs/skeleton";
 
-	import { popup } from '@skeletonlabs/skeleton';
-	import type { PopupSettings } from '@skeletonlabs/skeleton';
-	
-	import { getModalStore } from '@skeletonlabs/skeleton';
-	import { RadioGroup, RadioItem } from '@skeletonlabs/skeleton';
-	let value: number = 0;
+	const modalStore = getModalStore();
+	const toastStore = getToastStore();
+	let value: number = 0; // 0 = DD, 1 = ewfacquire
+	let configs: any[] = [];
+	let popupSettings: Record<number, PopupSettings> = {};
 
-	import type { ModalSettings } from '@skeletonlabs/skeleton';
+	// Načte konfigurace z databáze
+	async function loadConfigs() {
+		try {
+			configs = await invoke("get_all_ewf_configs");
+			console.log("Loaded configs:", configs);
 
-    const modalStore = getModalStore();
+			// Dynamicky vytvoříme popup settings pro každý config
+			popupSettings = configs.reduce(
+				(acc, config) => {
+					acc[config.id] = {
+						event: "click",
+						target: `config-popup-${config.id}`,
+						placement: "bottom",
+					};
+					return acc;
+				},
+				{} as Record<number, PopupSettings>,
+			);
+		} catch (error) {
+			console.error("Error fetching configs:", error);
+		}
+	}
 
-    function openFormModal() {
-        const modal: ModalSettings = {
-            type: 'component',
-            component: 'FormModal',
-            title: 'Nová konfigurace  ewfacquire',
-            response: (data: { name: string; email: string; message: string }) => {
-                console.log('Formulář odeslán:', data);
-                // Zde můžete přidat další logiku, např. odeslání dat na server
-            }
-        };
-        modalStore.trigger(modal);
-    }
+	// Otevře správný modal na základě vybraného typu (DD nebo ewfacquire)
+	function openFormModal() {
+		const modal: ModalSettings = {
+			type: "component",
+			component: value === 0 ? "NewConfigDDModal" : "NewConfigEwfModal",
+			title: value === 0 ? "Nová konfigurace DD" : "Nová konfigurace ewfacquire",
+			response: async () => {
+				await loadConfigs(); // Aktualizace seznamu po vytvoření
+			},
+		};
+		modalStore.trigger(modal);
+	}
 
-	
+	// Otevře modal s detaily vybrané konfigurace
+	function openConfigModal(config: any) {
+		console.log("Otevírám detail modal s config:", config);
+		const modal: ModalSettings = {
+			id: Date.now().toString(),
+			type: "component",
+			component: "EwfConfigDetailModal",
+			meta: { configData: config },
+			title: "Detaily konfigurace",
+		};
+		modalStore.trigger(modal);
+	}
 
-	
+	// Funkce pro zobrazení potvrzovacího toastu a mazání konfigurace
+	async function deleteConfig(configId: number) {
+		const confirmToast: ToastSettings = {
+			message: "Opravdu chcete odstranit tuto konfiguraci?",
+			background: "variant-filled-primary",
+			action: {
+				label: "Smazat",
+				response: async () => {
+					try {
+						await invoke("delete_or_deactivate_ewf_config", {
+							config_id: configId,
+						});
+						console.log(`Konfigurace ${configId} byla smazána.`);
+						toastStore.trigger({
+							message: "Konfigurace byla odstraněna.",
+							background: "variant-filled-success",
+						});
+						await loadConfigs(); // Aktualizace seznamu po smazání
+					} catch (error) {
+						console.error("Chyba při mazání konfigurace:", error);
+						toastStore.trigger({
+							message: "Nepodařilo se odstranit konfiguraci.",
+							background: "variant-filled-error",
+						});
+					}
+				},
+			},
+		};
+		toastStore.trigger(confirmToast);
+	}
+
+	onMount(async () => {
+		await loadConfigs();
+	});
 </script>
 
 <div class="container">
@@ -46,22 +118,39 @@
 
 <div class="config-grid">
 	<section class="grid grid-cols-2 md:grid-cols-4 gap-4">
-		{#each Array.from({ length: 12 }, (_, i) => i + 1) as item}
+		{#each configs as config}
 			<div class="grid-box">
-				<div class="h-auto variant-ringed-primary max-w-full rounded-lg w-32 h-32">
+				<div
+					class="h-auto variant-ringed-primary max-w-full rounded-lg w-32 h-32"
+					use:popup={popupSettings[config.id]}
+				>
 					<div class="centered-container">
-						<p class="name">Konf {item}</p>
-						<p class="text">17.10.24 15:51</p>
-						<p class="title">počet užití</p>
-						<p class="text">{item * item}</p>
+						<p class="name">{config.confname}</p>
+						<p class="text">ID: {config.id}</p>
+						<p class="title">Formát</p>
+						<p class="text">{config.ewf_format}</p>
 					</div>
 				</div>
+			</div>
+
+			<!-- Popup s možnostmi -->
+			<div class="popup-menu card p-2 shadow-lg" data-popup={`config-popup-${config.id}`}>
+				<button class="btn w-full text-left" on:click={() => openConfigModal(config)}>Info</button>
+				<button class="btn w-full text-left text-red-500" on:click={() => deleteConfig(config.id)}>Smazat</button>
+				<div class="arrow bg-surface-100-800-token" />
 			</div>
 		{/each}
 	</section>
 </div>
 
 <style lang="postcss">
+	.container {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		width: 100%;
+	}
+
 	.config-grid {
 		padding-top: 20px;
 		width: 50rem;
@@ -101,11 +190,30 @@
 		display: flex;
 		justify-content: center;
 		align-items: center;
+		cursor: pointer;
 	}
-	.container {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		width: 100%;
+
+	.popup-menu {
+		position: absolute;
+		background: white;
+		border-radius: 8px;
+		box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+		width: 140px;
+	}
+
+	.popup-menu button {
+		padding: 10px;
+		font-size: 14px;
+	}
+
+	.popup-menu .arrow {
+		position: absolute;
+		width: 10px;
+		height: 10px;
+		background: white;
+		transform: rotate(45deg);
+		top: -5px;
+		left: 50%;
+		margin-left: -5px;
 	}
 </style>

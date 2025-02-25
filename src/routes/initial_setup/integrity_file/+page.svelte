@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Stepper, Step, ProgressRadial } from '@skeletonlabs/skeleton';
-	import { invoke } from '@tauri-apps/api/tauri';
+	import { invoke } from '@tauri-apps/api/core';
 	import { goto } from '$app/navigation';
 
 	// Interface Definitions
