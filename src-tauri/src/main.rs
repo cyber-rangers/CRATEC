@@ -1,16 +1,16 @@
+use tauri::Builder;
+
 mod dashboard_layout;
 mod disk_info;
 mod initial_setup;
 mod logger;
-mod db_structure;
-use tauri::Builder;
+mod db;
+mod copy_configs;
 
 fn main() {
-    // Inicializace SQLite databáze pro logy
-    if let Err(e) = logger::initialize_logging() {
-        eprintln!("Logger initialization failed: {}", e);
-    }
-    
+    db::initialize_db();
+    logger::initialize_logging();
+
     Builder::default()
         .invoke_handler(tauri::generate_handler![
             initial_setup::find_file,
@@ -20,6 +20,9 @@ fn main() {
             dashboard_layout::get_device_status,
             disk_info::get_usb_device_details,
             disk_info::get_hdd_details,
+            copy_configs::save_new_ewf_config,
+            copy_configs::get_all_ewf_configs,
+            copy_configs::delete_or_deactivate_ewf_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

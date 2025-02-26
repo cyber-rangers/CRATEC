@@ -3,7 +3,7 @@
 	import { FaUsb, FaHdd } from 'svelte-icons/fa';
 	import { deviceStore } from '$lib/stores/deviceStore';
 	import { get, writable } from 'svelte/store';
-	import { invoke } from '@tauri-apps/api/tauri';
+	import { invoke } from '@tauri-apps/api/core';
 
 	interface SataDevice {
 		interface: string;

@@ -6,7 +6,7 @@ use std::str;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use sysinfo::{CpuExt, CpuRefreshKind, RefreshKind, System, SystemExt};
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 use tauri::command;
 use udev::{Device, Enumerator};
 
@@ -49,9 +49,9 @@ fn is_usb_mass_storage(dev: &Device) -> bool {
 // Globální proměnné pro sdílení informací mezi vlákny
 static SYSTEM_INFO: Lazy<Arc<Mutex<System>>> = Lazy::new(|| {
     let system = Arc::new(Mutex::new(System::new_with_specifics(
-        RefreshKind::new()
-            .with_cpu(CpuRefreshKind::new().with_cpu_usage())
-            .with_memory(),
+        RefreshKind::everything()
+            .with_cpu(CpuRefreshKind::everything())
+            .with_memory(MemoryRefreshKind::everything()),
     )));
 
     let system_clone = Arc::clone(&system);
@@ -61,7 +61,7 @@ static SYSTEM_INFO: Lazy<Arc<Mutex<System>>> = Lazy::new(|| {
         loop {
             {
                 let mut sys = system_clone.lock().unwrap();
-                sys.refresh_cpu();
+                sys.refresh_cpu_all(); // Použij refresh_cpu_all pro aktualizaci CPU
                 sys.refresh_memory();
             }
             thread::sleep(Duration::from_secs(1)); // Aktualizace každou sekundu
@@ -83,7 +83,7 @@ pub fn get_device_status() -> Result<DeviceStatus, String> {
     };
 
     // Získání využití CPU a RAM
-    let cpu_usage = system.global_cpu_info().cpu_usage();
+    let cpu_usage = system.global_cpu_usage();
 
     let used_memory = system.used_memory();
     let total_memory = system.total_memory();
