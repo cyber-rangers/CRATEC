@@ -1,0 +1,17 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/forms';
+@plugin '@tailwindcss/typography';
+
+@import '@skeletonlabs/skeleton';
+@import '@skeletonlabs/skeleton/optional/presets';
+@import '@skeletonlabs/skeleton/themes/crimson';
+@custom-variant dark (&:where(.dark, .dark *));
+
+@source '../node_modules/@skeletonlabs/skeleton-svelte/dist';
+
+html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  

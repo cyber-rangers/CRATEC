@@ -1,53 +1,49 @@
 <script lang="ts">
+	// Import komponent z SkeletonUI
+	import { AppBar, Navigation, Modal } from '@skeletonlabs/skeleton-svelte';
+	import { goto } from '$app/navigation';
+
+	// Import ikon z lucide-svelte pro AppBar a Navigation
 	import {
-		AppRail,
-		AppRailTile,
-		AppRailAnchor,
-		getModalStore,
-	} from "@skeletonlabs/skeleton";
-	import type { ModalSettings } from "@skeletonlabs/skeleton";
-	import { goto } from "$app/navigation";
-	import {
-		FaHdd,
-		FaCog,
-		FaHistory,
-		FaBroom,
-		FaCloudscale,
-		FaUsb,
-		FaCopy,
-		FaAngleDoubleUp,
-		FaSlidersH,
-	} from "svelte-icons/fa";
-	import { onDestroy, onMount } from "svelte";
-	import { invoke } from "@tauri-apps/api/core";
-	import { writable } from "svelte/store";
-	import { deviceStore } from "$lib/stores/deviceStore";
+		Copy,
+		HardDrive,
+		History,
+		Sliders,
+		Settings,
+		ChevronsUp,
+		Disc3,
+		Usb,
+		Cpu,
+		MemoryStick
+	} from 'lucide-svelte';
 
-	const modalStore = getModalStore();
+	import { onMount, onDestroy } from 'svelte';
+	import { invoke } from '@tauri-apps/api/core';
+	import { writable } from 'svelte/store';
+	import { deviceStore } from '$lib/stores/deviceStore';
 
-	const modal: ModalSettings = {
-		type: "alert",
-		// Data
-		title: "Zde budou aktivní procesy co běží",
-		body: "",
-		image: "",
-	};
+	// Import modálů
+	import ProcessModal from '$lib/components/modals/ProcessModal.svelte';
+	import LogoModal from '$lib/components/modals/LogoModal.svelte';
 
-	let currentTile = 0;
+	// Stav pro otevření modálů
+	let processModalOpen = false;
+	let logoModalOpen = false;
 
-	const handleNavigation = (path: string, tileValue: number) => {
-		currentTile = tileValue;
+	// Navigation – použijeme nový Navigation komponent
+	const navValue = writable('files');
+	const handleNavigation = (path: string, value: string) => {
+		navValue.set(value);
 		goto(path);
 	};
 
+	// Rozhraní pro stav zařízení
 	interface SataDevice {
 		interface: string;
 	}
-
 	interface UsbDevice {
 		interface: string;
 	}
-
 	interface DeviceStatus {
 		usb_devices: UsbDevice[];
 		sata_devices: SataDevice[];
@@ -55,36 +51,35 @@
 		ram_usage: number;
 	}
 
+	// Store pro stav zařízení
 	const deviceStatus = writable<DeviceStatus>({
 		usb_devices: [],
 		sata_devices: [],
 		cpu_usage: 0,
-		ram_usage: 0,
+		ram_usage: 0
 	});
-
 	const loading = writable(true);
 	let errorMessage: string | null = null;
 
-	const getFormattedDateTime = () => {
+	// Funkce pro formátování data a času
+	const getFormattedDateTime = (): string => {
 		const date = new Date();
-		const formattedDate = date.toLocaleDateString("cs-CZ", {
-			day: "numeric",
-			month: "numeric",
+		const formattedDate = date.toLocaleDateString('cs-CZ', {
+			day: 'numeric',
+			month: 'numeric'
 		});
-		const formattedTime = date.toLocaleTimeString("cs-CZ", {
-			hour: "2-digit",
-			minute: "2-digit",
-			hour12: false,
+		const formattedTime = date.toLocaleTimeString('cs-CZ', {
+			hour: '2-digit',
+			minute: '2-digit',
+			hour12: false
 		});
 		return `${formattedDate} ${formattedTime}`;
 	};
 
 	let currentDateTime: string = getFormattedDateTime();
-
 	const dateTimeInterval = setInterval(() => {
 		currentDateTime = getFormattedDateTime();
 	}, 3000);
-
 	onDestroy(() => {
 		clearInterval(dateTimeInterval);
 	});
@@ -97,15 +92,14 @@
 		isFetching = true;
 		try {
 			loading.set(true);
-			const status: DeviceStatus =
-				await invoke<DeviceStatus>("get_device_status");
+			const status: DeviceStatus = await invoke<DeviceStatus>('get_device_status');
 			console.log(status);
 			deviceStore.set(status);
 			deviceStatus.set(status);
 			errorMessage = null;
 		} catch (error) {
-			console.error("Nepodařilo se získat stav zařízení:", error);
-			errorMessage = "Nepodařilo se získat stav zařízení";
+			console.error('Nepodařilo se získat stav zařízení:', error);
+			errorMessage = 'Nepodařilo se získat stav zařízení';
 		} finally {
 			loading.set(false);
 			isFetching = false;
@@ -126,89 +120,34 @@
 </script>
 
 <div class="container">
-	<AppRail class="w-[5.35rem]">
-		<svelte:fragment slot="lead">
-			<AppRailAnchor href="/">
-				<img
-					src="/rangers-logo.png"
-					alt="Rangers Logo"
-					class="logo fade-text"
-				/>
-			</AppRailAnchor>
-		</svelte:fragment>
-
-		<AppRailTile
-			on:click={() => handleNavigation("/dashboard/disk_clone", 0)}
-			bind:group={currentTile}
-			name="tile-1"
-			value={0}
-		>
-			<svelte:fragment slot="lead">
-				<div class="icons"><FaCopy /></div>
-			</svelte:fragment>
-			<span>Klonování</span>
-		</AppRailTile>
-
-		<AppRailTile
-			on:click={() => handleNavigation("/dashboard/disk_info", 1)}
-			bind:group={currentTile}
-			name="tile-2"
-			value={1}
-		>
-			<svelte:fragment slot="lead">
-				<div class="icons"><FaHdd /></div>
-			</svelte:fragment>
-			<span>Disk Info</span>
-		</AppRailTile>
-
-		<AppRailTile
-			on:click={() => handleNavigation("/dashboard", 2)}
-			bind:group={currentTile}
-			name="tile-3"
-			value={2}
-		>
-			<svelte:fragment slot="lead">
-				<div class="icons"><FaBroom /></div>
-			</svelte:fragment>
-			<span>Formátování</span>
-		</AppRailTile>
-
-		<AppRailTile
-			on:click={() => handleNavigation("/dashboard", 3)}
-			bind:group={currentTile}
-			name="tile-4"
-			value={3}
-		>
-			<svelte:fragment slot="lead">
-				<div class="icons"><FaHistory /></div>
-			</svelte:fragment>
-			<span>Historie</span>
-		</AppRailTile>
-
-		<AppRailTile
-			on:click={() => handleNavigation("/dashboard/pre_configs", 4)}
-			bind:group={currentTile}
-			name="tile-5"
-			value={4}
-		>
-			<svelte:fragment slot="lead">
-				<div class="icons"><FaSlidersH /></div>
-			</svelte:fragment>
-			<span>Konfigurace</span>
-		</AppRailTile>
-
-		<AppRailTile
-			on:click={() => handleNavigation("/dashboard", 5)}
-			bind:group={currentTile}
-			name="tile-6"
-			value={5}
-		>
-			<svelte:fragment slot="lead">
-				<div class="icons"><FaCog /></div>
-			</svelte:fragment>
-			<span>Nastavení</span>
-		</AppRailTile>
-	</AppRail>
+	<Navigation.Rail>
+		{#snippet header()}
+			<!-- Kliknutím na logo se otevře LogoModal -->
+			<Navigation.Tile href="#" title="Menu">
+				<button onclick={() => (logoModalOpen = true)}>
+					<img src="/rangers-logo.png" alt="Rangers Logo" class="logo fade-text" />
+				</button>
+			</Navigation.Tile>
+		{/snippet}
+		{#snippet tiles()}
+			<Navigation.Tile label="Klonování" href="/dashboard/disk_clone">
+				<Copy />
+			</Navigation.Tile>
+			<Navigation.Tile label="Disk Info" href="/dashboard/disk_info">
+				<HardDrive />
+			</Navigation.Tile>
+			<Navigation.Tile label="Formátování" href="/dashboard">
+				<Disc3 />
+			</Navigation.Tile>
+			<Navigation.Tile label="Historie" href="/dashboard">
+				<History />
+			</Navigation.Tile>
+			<Navigation.Tile label="Konfigurace" href="/dashboard/pre_configs">
+				<Sliders />
+			</Navigation.Tile>
+		{/snippet}
+		
+	</Navigation.Rail>
 
 	<div class="main-area">
 		<header class="header">
@@ -221,24 +160,18 @@
 					<span class="error-message">{errorMessage}</span>
 				{:else}
 					{#each $deviceStatus.usb_devices as device}
-						<span
-							title={`USB Device Interface: ${device.interface}`}
-							class="device-indicator"
-						>
+						<span title={`USB Device Interface: ${device.interface}`} class="device-indicator">
 							<div class="connected-icon" style="width: 20px;">
-								<FaUsb />
+								<Usb />
 							</div>
 							<span class="device-name">{device.interface}</span>
 						</span>
 					{/each}
 
 					{#each $deviceStatus.sata_devices as device}
-						<span
-							title={`SATA Device Interface: ${device.interface}`}
-							class="device-indicator"
-						>
+						<span title={`SATA Device Interface: ${device.interface}`} class="device-indicator">
 							<div class="connected-icon" style="width: 20px;">
-								<FaHdd />
+								<HardDrive />
 							</div>
 							<span class="device-name">{device.interface}</span>
 						</span>
@@ -249,14 +182,13 @@
 			<div class="header-right">
 				<span class="sysinfo-span">
 					<div class="connected-icon" style="width: 20px;">
-						<FaCloudscale />
+						<Cpu />
 					</div>
-					<span class="device-name"
-						>CPU: {$deviceStatus.cpu_usage.toFixed(1)}%</span
-					>
-					<span class="device-name"
-						>RAM: {$deviceStatus.ram_usage.toFixed(1)}%</span
-					>
+					<span class="device-name">{$deviceStatus.cpu_usage.toFixed(1)}%</span>
+					<div class="connected-icon" style="width: 20px; margin-left: 5px;">
+						<MemoryStick />
+					</div>
+					<span class="device-name">{$deviceStatus.ram_usage.toFixed(1)}%</span>
 				</span>
 			</div>
 		</header>
@@ -265,13 +197,17 @@
 			<slot />
 		</main>
 	</div>
-
-	<button class="floating-div" on:click={() => modalStore.trigger(modal)}>
-		<div style="width: 10px; margin-right: 5px;"><FaAngleDoubleUp /></div>
+	<!-- Kliknutím na tlačítko Procesy se otevře ProcessModal -->
+	<button class="floating-div" onclick={() => (processModalOpen = true)}>
+		<div style="width: 10px; margin-right: 30px;"><ChevronsUp /></div>
 		Procesy
-		<div style="width: 10px;margin-left: 5px;"><FaAngleDoubleUp /></div>
+		<div style="width: 10px;margin-left: 30px;"><ChevronsUp /></div>
 	</button>
 </div>
+
+
+<ProcessModal bind:openState={processModalOpen} />
+<LogoModal bind:openState={logoModalOpen} />
 
 <style lang="postcss">
 	.container {
@@ -291,7 +227,7 @@
 		justify-content: space-between;
 		position: relative;
 		height: 40px;
-		background-color: rgba(var(--color-surface-800) / 1);
+		background-color: var(--color-surface-900);
 		padding: 0 2rem;
 		box-shadow: 0 1px 40px rgba(212, 22, 60, 0.9);
 		width: 100%;
@@ -306,69 +242,50 @@
 		display: flex;
 		justify-content: flex-start;
 	}
-
 	.device-indicators {
 		display: flex;
 		gap: 1rem;
 		justify-content: center;
 		flex: 1;
 	}
-
 	.header-right {
 		flex: 1;
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
 	}
-
 	.header-text {
 		font-size: 1rem;
 		font-weight: bold;
 		color: #d4163c;
 	}
-
 	.connected-icon {
 		color: #d4163c;
 		transition: color 0.3s ease;
 	}
-
 	.device-name {
-		margin-left: 0.3rem;
+		margin-left: 0.6rem;
 		font-size: 0.75rem;
 		font-weight: bold;
 		color: #736d6c;
 	}
-
 	.device-indicator {
 		display: flex;
 		align-items: center;
 	}
-
 	.error-message {
 		color: red;
 		font-size: 0.875rem;
 	}
-
 	.main-content {
 		flex: 1;
 		padding: 1.5rem;
 		overflow-y: auto;
 	}
-
-	.icons {
-		height: 2rem;
-		width: 2rem;
-		margin: auto;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
 	.logo {
 		margin: auto;
 		height: 80px;
 	}
-
 	.floating-div {
 		position: fixed;
 		bottom: 0px;
@@ -386,9 +303,8 @@
 		align-items: center;
 		cursor: pointer;
 	}
-
 	.floating-div::before {
-		content: "";
+		content: '';
 		position: absolute;
 		top: 0;
 		left: 0;
