@@ -1,82 +1,138 @@
 <script lang="ts">
-	import { getModalStore } from "@skeletonlabs/skeleton";
-	import { onMount } from "svelte";
+	import { Modal } from '@skeletonlabs/skeleton-svelte';
+	import { onMount } from 'svelte';
 
-	const modalStore = getModalStore();
+	export let config: any;
+	export let openState: boolean = false;
 
-	// Načtení dat konfigurace z meta
-	$: modalData = $modalStore.length ? $modalStore[0].meta.configData : {};
-
-	// Ladicí výpis do konzole
-	$: console.log("Detail modal data:", modalData);
-
-	// Zavření modalu
-	function closeModal() {
-		modalStore.close();
+	function modalClose() {
+		openState = false;
 	}
-
-	// Funkce pro posunutí na začátek při otevření
+	// Po otevření zajistíme, že se obsah modalu (tabulka) posune na začátek
 	onMount(() => {
 		setTimeout(() => {
-			const modalElement = document.querySelector(".table-container");
+			const modalElement = document.querySelector('.table-wrap');
 			if (modalElement) {
 				modalElement.scrollTop = 0;
 			}
-		}, 10); // Malé zpoždění pro zajištění správného posunu
+		}, 10);
 	});
 </script>
 
-<div class="table-container">
-	<!-- Tabulka s konfigurací -->
-	<table class="table table-compact">
-		<thead>
-			<tr>
-				<th>Položka</th>
-				<th>Hodnota</th>
-			</tr>
-		</thead>
-		<tbody>
-			<tr><td><strong>Název</strong></td><td>{modalData?.confname || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Kódová stránka</strong></td><td>{modalData?.codepage || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Počet sektorů na čtení</strong></td><td>{modalData?.sectors_per_read || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Bajty k získání</strong></td><td>{modalData?.bytes_to_read || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Metoda komprese</strong></td><td>{modalData?.compression_method || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Úroveň komprese</strong></td><td>{modalData?.compression_level || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Formát EWF</strong></td><td>{modalData?.ewf_format || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Granularita sektorů</strong></td><td>{modalData?.granularity_sectors || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Hash typy</strong></td><td>{modalData?.hash_types || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Poznámky</strong></td><td>{modalData?.notes || "Bez poznámek"}</td></tr>
-			<tr><td><strong>Offset</strong></td><td>{modalData?.offset || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Velikost bufferu procesu</strong></td><td>{modalData?.process_buffer_size || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Bajty na sektor</strong></td><td>{modalData?.bytes_per_sector || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Tichý režim</strong></td><td>{modalData?.quiet_mode ? "Ano" : "Ne"}</td></tr>
-			<tr><td><strong>Počet opakování při chybě čtení</strong></td><td>{modalData?.read_retry_count || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Přehazování bajtových párů</strong></td><td>{modalData?.swap_byte_pairs ? "Ano" : "Ne"}</td></tr>
-			<tr><td><strong>Velikost segmentu</strong></td><td>{modalData?.segment_size || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Podrobný výstup</strong></td><td>{modalData?.verbose_output ? "Ano" : "Ne"}</td></tr>
-			<tr><td><strong>Nulování při chybě čtení</strong></td><td>{modalData?.zero_on_read_error ? "Ano" : "Ne"}</td></tr>
-			<tr><td><strong>Použití chunk dat</strong></td><td>{modalData?.use_chunk_data ? "Ano" : "Ne"}</td></tr>
-			<tr><td><strong>Datum vytvoření</strong></td><td>{modalData?.created || "Není k dispozici"}</td></tr>
-			<tr><td><strong>Aktivní</strong></td><td>{modalData?.active ? "Ano" : "Ne"}</td></tr>
-		</tbody>
-	</table>
+<Modal
+	open={openState}
+	onOpenChange={(e) => (openState = e.open)}
+	triggerBase="btn preset-tonal"
+	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	backdropClasses="backdrop-blur-sm"
+>
 
-	<!-- Ovládací tlačítko pouze pro zavření -->
-	<div class="modal-footer">
-		<button class="btn btn-secondary" on:click={closeModal}>Zavřít</button>
-	</div>
-</div>
+	{#snippet content()}
+		<div class="table-wrap">
+			<table class="table caption-bottom">
+				<thead>
+					<tr>
+						<th>Položka</th>
+						<th>Hodnota</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td><strong>Název</strong></td>
+						<td>{config?.confname || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Datum vytvoření</strong></td>
+						<td>{config?.created || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Kódová stránka</strong></td>
+						<td>{config?.codepage || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Počet sektorů na čtení</strong></td>
+						<td>{config?.sectors_per_read || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Bajty k získání</strong></td>
+						<td>{config?.bytes_to_read || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Metoda komprese</strong></td>
+						<td>{config?.compression_method || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Úroveň komprese</strong></td>
+						<td>{config?.compression_level || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Formát EWF</strong></td>
+						<td>{config?.ewf_format || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Granularita sektorů</strong></td>
+						<td>{config?.granularity_sectors || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Hash typy</strong></td>
+						<td>{config?.hash_types || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Poznámky</strong></td>
+						<td>{config?.notes || 'Bez poznámek'}</td>
+					</tr>
+					<tr>
+						<td><strong>Offset</strong></td>
+						<td>{config?.offset || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Velikost bufferu procesu</strong></td>
+						<td>{config?.process_buffer_size || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Bajty na sektor</strong></td>
+						<td>{config?.bytes_per_sector || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Počet opakování při chybě čtení</strong></td>
+						<td>{config?.read_retry_count || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Přehazování bajtových párů</strong></td>
+						<td>{config?.swap_byte_pairs ? 'Ano' : 'Ne'}</td>
+					</tr>
+					<tr>
+						<td><strong>Velikost segmentu</strong></td>
+						<td>{config?.segment_size || 'Není k dispozici'}</td>
+					</tr>
+					<tr>
+						<td><strong>Nulování při chybě čtení</strong></td>
+						<td>{config?.zero_on_read_error ? 'Ano' : 'Ne'}</td>
+					</tr>
+					<tr>
+						<td><strong>Použití chunk dat</strong></td>
+						<td>{config?.use_chunk_data ? 'Ano' : 'Ne'}</td>
+					</tr>
+					
+				</tbody>
+			</table>
+			<div class="modal-footer">
+				<button class="btn preset-filled-primary-500" on:click={modalClose}>Zavřít</button>
+			</div>
+		</div>
+	{/snippet}
+</Modal>
 
 <style lang="postcss">
-	.table-container {
-		width: 60%;
-		padding: 25px;
+	.table-wrap {
+		width: 90vh;
+		padding: 10px;
 		max-height: 90vh;
 		overflow-y: auto;
-		scroll-behavior: smooth; /* Přidává plynulý efekt posunu */
+		scroll-behavior: smooth;
 	}
 
-	.table-container::-webkit-scrollbar {
+	.table-wrap::-webkit-scrollbar {
 		width: 1px;
 		background-color: transparent;
 	}
@@ -95,11 +151,6 @@
 
 	.table th {
 		background-color: rgba(var(--color-surface-600) / 1);
-	}
-
-	/* Odstranění hover efektu na řádcích */
-	.table tbody tr:hover {
-		background-color: inherit !important;
 	}
 
 	.modal-footer {

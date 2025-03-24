@@ -6,6 +6,7 @@ mod initial_setup;
 mod logger;
 mod db;
 mod copy_configs;
+mod ewfacquire;
 
 fn main() {
     db::initialize_db();
@@ -21,8 +22,10 @@ fn main() {
             disk_info::get_usb_device_details,
             disk_info::get_hdd_details,
             copy_configs::save_new_ewf_config,
-            copy_configs::get_all_ewf_configs,
-            copy_configs::delete_or_deactivate_ewf_config,
+            copy_configs::get_all_active_configs,
+            copy_configs::delete_or_deactivate_config,
+            copy_configs::save_new_dd_config,
+            ewfacquire::run_ewfacquire,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

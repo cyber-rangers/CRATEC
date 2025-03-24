@@ -23,17 +23,15 @@ pub fn initialize_ewf_config_scheme(conn: &Connection) -> Result<()> {
             hash_types TEXT NOT NULL DEFAULT '[]',
             ewf_format TEXT NOT NULL DEFAULT 'encase6'
                 CHECK(ewf_format IN ('ewf','smart','ftk','encase2','encase3','encase4','encase5','encase6','linen5','linen6','ewfx')),
-            granularity_sectors INTEGER NOT NULL DEFAULT 0,
+            granularity_sectors TEXT NOT NULL DEFAULT '2',
             notes TEXT NOT NULL DEFAULT '',
             offset TEXT NOT NULL DEFAULT '0'
                 CHECK(offset IN ('0','ask')),
             process_buffer_size TEXT NOT NULL DEFAULT '',
             bytes_per_sector TEXT NOT NULL DEFAULT 'auto',
-            quiet_mode BOOLEAN NOT NULL DEFAULT false,
             read_retry_count TEXT NOT NULL DEFAULT '2',
             swap_byte_pairs BOOLEAN NOT NULL DEFAULT false,
             segment_size TEXT NOT NULL DEFAULT '1.4 GiB',
-            verbose_output BOOLEAN NOT NULL DEFAULT false,
             zero_on_read_error BOOLEAN NOT NULL DEFAULT false,
             use_chunk_data BOOLEAN NOT NULL DEFAULT false
         )"#,

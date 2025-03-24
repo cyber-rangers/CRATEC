@@ -1,13 +1,13 @@
 <script>
     import { goto } from "$app/navigation";
     import { onMount } from "svelte";
-    import { ProgressRadial } from "@skeletonlabs/skeleton";
-    // Perform the redirection to /boot when the component is mounted
+
+
     onMount(() => {
         setTimeout(() => {
             //goto('/initial_setup');
             goto("/dashboard");
-        }, 3000); // Delay in milliseconds (9000ms = 9 seconds)
+        }, 3000);
     });
 </script>
 

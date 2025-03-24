@@ -1,147 +1,242 @@
 <script lang="ts">
-	import { FaPlus } from "svelte-icons/fa";
-	import {
-		getModalStore,
-		getToastStore,
-		popup,
-	} from "@skeletonlabs/skeleton";
-	import { RadioGroup, RadioItem } from "@skeletonlabs/skeleton";
-	import { invoke } from "@tauri-apps/api/core";
-	import { onMount } from "svelte";
-	import type {
-		ModalSettings,
-		ToastSettings,
-		PopupSettings,
-	} from "@skeletonlabs/skeleton";
+	import { Popover } from '@skeletonlabs/skeleton-svelte';
+	import { invoke } from '@tauri-apps/api/core';
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { getContext } from 'svelte';
+	import type { ToastContext } from '@skeletonlabs/skeleton-svelte';
 
-	const modalStore = getModalStore();
-	const toastStore = getToastStore();
-	let value: number = 0; // 0 = DD, 1 = ewfacquire
-	let configs: any[] = [];
-	let popupSettings: Record<number, PopupSettings> = {};
+	export const toast: ToastContext = getContext('toast');
 
-	// Načte konfigurace z databáze
+	import DDConfigDetailModal from '$lib/components/modals/DDConfigDetailModal.svelte';
+	import EwfConfigDetailModal from '$lib/components/modals/EwfConfigDetailModal.svelte';
+
+	let DDConfigDetailModalOpen = false;
+	let EwfConfigDetailModalOpen = false;
+
+	// Přepínač: 0 = DD, 1 = ewfacquire
+	let value: number = 0;
+	// Očekávaná struktura: { dd: [...], ewf: [...] }
+	let configs: any = { dd: [], ewf: [] };
+	let popupSettings: Record<number, any> = {};
+
+	// Stav pro detailní modály (původní)
+	let showDDModal = false;
+	let selectedDDConfig: any = null;
+	let showEwfModal = false;
+	let selectedEwfConfig: any = null;
+
 	async function loadConfigs() {
 		try {
-			configs = await invoke("get_all_ewf_configs");
-			console.log("Loaded configs:", configs);
-
-			// Dynamicky vytvoříme popup settings pro každý config
-			popupSettings = configs.reduce(
-				(acc, config) => {
-					acc[config.id] = {
-						event: "click",
-						target: `config-popup-${config.id}`,
-						placement: "bottom",
-					};
-					return acc;
-				},
-				{} as Record<number, PopupSettings>,
-			);
+			configs = await invoke('get_all_active_configs');
+			console.log('Loaded configs:', configs);
+			popupSettings = {};
+			configs.ewf.forEach((config: any) => {
+				popupSettings[config.id] = {
+					event: 'click',
+					target: `config-popup-${config.id}`,
+					placement: 'bottom'
+				};
+			});
+			configs.dd.forEach((config: any) => {
+				popupSettings[config.id] = {
+					event: 'click',
+					target: `config-popup-${config.id}`,
+					placement: 'bottom'
+				};
+			});
 		} catch (error) {
-			console.error("Error fetching configs:", error);
+			console.error('Error fetching configs:', error);
 		}
 	}
 
-	// Otevře správný modal na základě vybraného typu (DD nebo ewfacquire)
+	// Otevře novou konfiguraci – podle přepínače naviguje na příslušnou stránku
 	function openFormModal() {
-		const modal: ModalSettings = {
-			type: "component",
-			component: value === 0 ? "NewConfigDDModal" : "NewConfigEwfModal",
-			title: value === 0 ? "Nová konfigurace DD" : "Nová konfigurace ewfacquire",
-			response: async () => {
-				await loadConfigs(); // Aktualizace seznamu po vytvoření
-			},
-		};
-		modalStore.trigger(modal);
+		console.log('Otevírám formulář pro vytvoření nové konfigurace');
+		if (value === 0) {
+			goto('/dashboard/pre_configs/new_dd_config');
+		} else if (value === 1) {
+			goto('/dashboard/pre_configs/new_ewf_config');
+		}
 	}
 
-	// Otevře modal s detaily vybrané konfigurace
-	function openConfigModal(config: any) {
-		console.log("Otevírám detail modal s config:", config);
-		const modal: ModalSettings = {
-			id: Date.now().toString(),
-			type: "component",
-			component: "EwfConfigDetailModal",
-			meta: { configData: config },
-			title: "Detaily konfigurace",
-		};
-		modalStore.trigger(modal);
-	}
-
-	// Funkce pro zobrazení potvrzovacího toastu a mazání konfigurace
 	async function deleteConfig(configId: number) {
-		const confirmToast: ToastSettings = {
-			message: "Opravdu chcete odstranit tuto konfiguraci?",
-			background: "variant-filled-primary",
-			action: {
-				label: "Smazat",
-				response: async () => {
-					try {
-						await invoke("delete_or_deactivate_ewf_config", {
-							config_id: configId,
-						});
-						console.log(`Konfigurace ${configId} byla smazána.`);
-						toastStore.trigger({
-							message: "Konfigurace byla odstraněna.",
-							background: "variant-filled-success",
-						});
-						await loadConfigs(); // Aktualizace seznamu po smazání
-					} catch (error) {
-						console.error("Chyba při mazání konfigurace:", error);
-						toastStore.trigger({
-							message: "Nepodařilo se odstranit konfiguraci.",
-							background: "variant-filled-error",
-						});
-					}
-				},
-			},
-		};
-		toastStore.trigger(confirmToast);
+		if (!confirm('Opravdu chcete odstranit tuto konfiguraci?')) return;
+		try {
+			await invoke('delete_or_deactivate_config', {
+				config_id: configId,
+				config_type: 'ewf'
+			});
+			console.log(`Konfigurace ${configId} byla smazena.`);
+			toast.create({
+				title: 'Success',
+				description: 'Konfigurace byla odstraněna.',
+				type: 'success'
+			});
+			await loadConfigs();
+		} catch (error) {
+			console.error('Chyba při mazání konfigurace:', error);
+			toast.create({
+				title: 'Error',
+				description: 'Nepodařilo se odstranit konfiguraci.',
+				type: 'error'
+			});
+		}
+	}
+
+	async function deleteDDConfig(configId: number) {
+		if (!confirm('Opravdu chcete odstranit tuto konfiguraci?')) return;
+		try {
+			await invoke('delete_or_deactivate_config', {
+				config_id: configId,
+				config_type: 'dd'
+			});
+			console.log(`DD konfigurace ${configId} byla smazena.`);
+			toast.create({
+				title: 'Success',
+				description: 'Konfigurace byla odstraněna.',
+				type: 'success'
+			});
+			await loadConfigs();
+		} catch (error) {
+			console.error('Chyba při mazání DD konfigurace:', error);
+			toast.create({
+				title: 'Error',
+				description: 'Nepodařilo se odstranit konfiguraci.',
+				type: 'error'
+			});
+		}
 	}
 
 	onMount(async () => {
 		await loadConfigs();
 	});
+
+	// Funkce pro uzavření detailních modálů (pokud se stále používají)
+	function closeDDModal() {
+		showDDModal = false;
+	}
+
+	function closeEwfModal() {
+		showEwfModal = false;
+	}
 </script>
 
 <div class="container">
-	<RadioGroup active="variant-filled-primary" hover="hover:variant-soft-primary">
-		<RadioItem bind:group={value} name="justify" value={0}>DD</RadioItem>
-		<RadioItem bind:group={value} name="justify" value={1}>ewfacquire</RadioItem>
-	</RadioGroup>
-
-	<button on:click={openFormModal} type="button" class="btn-icon variant-filled-primary">
-		<div style="width: 15px;"><FaPlus /></div>
+	<nav class="btn-group preset-outlined-surface-200-800 flex-col p-2 md:flex-row">
+		<button
+			type="button"
+			on:click={() => (value = 0)}
+			class="btn {value === 0 ? 'preset-filled' : 'hover:preset-tonal'}"
+		>
+			DD
+		</button>
+		<button
+			type="button"
+			on:click={() => (value = 1)}
+			class="btn {value === 1 ? 'preset-filled' : 'hover:preset-tonal'}"
+		>
+			ewfacquire
+		</button>
+	</nav>
+	<button
+		on:click={openFormModal}
+		type="button"
+		class="btn preset-filled-primary-500 flex h-10 w-10 items-center justify-center rounded-full leading-none"
+	>
+		+
 	</button>
 </div>
 
 <div class="config-grid">
-	<section class="grid grid-cols-2 md:grid-cols-4 gap-4">
-		{#each configs as config}
-			<div class="grid-box">
-				<div
-					class="h-auto variant-ringed-primary max-w-full rounded-lg w-32 h-32"
-					use:popup={popupSettings[config.id]}
+	<section class="grid grid-cols-2 gap-4 md:grid-cols-4">
+		{#if value === 0}
+			<!-- Vykreslíme seznam DD konfigurací -->
+			{#each configs.dd as config (config.id)}
+				<Popover
+					positioning={{ placement: 'bottom' }}
+					triggerBase=""
+					contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
+					arrow
+					arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+					zIndex="10"
 				>
-					<div class="centered-container">
-						<p class="name">{config.confname}</p>
-						<p class="text">ID: {config.id}</p>
-						<p class="title">Formát</p>
-						<p class="text">{config.ewf_format}</p>
-					</div>
-				</div>
-			</div>
-
-			<!-- Popup s možnostmi -->
-			<div class="popup-menu card p-2 shadow-lg" data-popup={`config-popup-${config.id}`}>
-				<button class="btn w-full text-left" on:click={() => openConfigModal(config)}>Info</button>
-				<button class="btn w-full text-left text-red-500" on:click={() => deleteConfig(config.id)}>Smazat</button>
-				<div class="arrow bg-surface-100-800-token" />
-			</div>
-		{/each}
+					{#snippet trigger()}
+						<div class="grid-box">
+							<div class="variant-ringed-primary"></div>
+							<div class="centered-container">
+								<p class="name">{config.confname}</p>
+								<p class="text">ID: {config.id}</p>
+								<p class="title">Block size</p>
+								<p class="text">{config.bs} b</p>
+							</div>
+						</div>
+					{/snippet}
+					{#snippet content()}
+						<article>
+							<button
+								class="btn w-full text-left"
+								on:click={() => { selectedDDConfig = config; DDConfigDetailModalOpen = true; }}
+							>
+								Info
+							</button>
+							<button
+								class="btn w-full text-left text-red-500"
+								on:click={() => deleteDDConfig(config.id)}
+							>
+								Smazat
+							</button>
+						</article>
+					{/snippet}
+				</Popover>
+			{/each}
+		{:else if value === 1}
+			<!-- Vykreslíme seznam EWF konfigurací -->
+			{#each configs.ewf as config (config.id)}
+				<Popover
+					positioning={{ placement: 'bottom' }}
+					triggerBase=""
+					contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
+					arrow
+					arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+					zIndex="10"
+				>
+					{#snippet trigger()}
+						<div class="grid-box">
+							<div class="variant-ringed-primary"></div>
+							<div class="centered-container">
+								<p class="name">{config.confname}</p>
+								<p class="text">ID: {config.id}</p>
+								<p class="title">Formát</p>
+								<p class="text">{config.ewf_format}</p>
+							</div>
+						</div>
+					{/snippet}
+					{#snippet content()}
+						<article>
+							<button
+								class="btn w-full text-left"
+								on:click={() => { selectedEwfConfig = config; EwfConfigDetailModalOpen = true; }}
+							>
+								Info
+							</button>
+							<button
+								class="btn w-full text-left text-red-500"
+								on:click={() => deleteConfig(config.id)}
+							>
+								Smazat
+							</button>
+						</article>
+					{/snippet}
+				</Popover>
+			{/each}
+		{/if}
 	</section>
 </div>
+
+
+<DDConfigDetailModal bind:openState={DDConfigDetailModalOpen} config={selectedDDConfig} on:close={closeDDModal} />
+<EwfConfigDetailModal bind:openState={EwfConfigDetailModalOpen} config={selectedEwfConfig} on:close={closeEwfModal} />
 
 <style lang="postcss">
 	.container {
@@ -155,9 +250,34 @@
 		padding-top: 20px;
 		width: 50rem;
 		margin: auto;
+		max-height: 28rem;
+		overflow-y: auto;
+	}
+
+	.grid-box {
+		position: relative;
+		width: 8rem;
+		height: 8rem;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		cursor: pointer;
+	}
+
+	.variant-ringed-primary {
+		position: absolute;
+		width: 100%;
+		height: 100%;
+		border: 4px solid var(--color-primary-500);
+		border-radius: 0.5rem;
+		z-index: 2;
 	}
 
 	.centered-container {
+		position: absolute;
+		width: 100%;
+		height: 100%;
+		background-color: var(--color-surface-900);
 		padding-top: 15px;
 		padding-bottom: 5px;
 		display: flex;
@@ -165,7 +285,8 @@
 		justify-content: center;
 		align-items: center;
 		text-align: center;
-		height: 100%;
+		border-radius: 28px;
+		z-index: 3;
 	}
 
 	.centered-container .name {
@@ -184,36 +305,5 @@
 	.centered-container .text {
 		font-size: 1rem;
 		color: white;
-	}
-
-	.grid-box {
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		cursor: pointer;
-	}
-
-	.popup-menu {
-		position: absolute;
-		background: white;
-		border-radius: 8px;
-		box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
-		width: 140px;
-	}
-
-	.popup-menu button {
-		padding: 10px;
-		font-size: 14px;
-	}
-
-	.popup-menu .arrow {
-		position: absolute;
-		width: 10px;
-		height: 10px;
-		background: white;
-		transform: rotate(45deg);
-		top: -5px;
-		left: 50%;
-		margin-left: -5px;
 	}
 </style>
