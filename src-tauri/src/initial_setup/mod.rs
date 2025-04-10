@@ -1,13 +1,13 @@
 use crate::logger::{log_debug, log_error, log_warn}; // Import vlastního loggeru
+use base64::{engine::general_purpose, Engine};
+use lazy_static::lazy_static;
+use ring::signature;
+use serde_json::Value;
 use std::fs::File;
 use std::io::Read;
-use ring::signature;
-use base64::{engine::general_purpose, Engine};
+use std::sync::Mutex;
 use tauri::command;
 use tokio::time::{sleep, Duration};
-use serde_json::Value;
-use std::sync::Mutex;
-use lazy_static::lazy_static;
 
 lazy_static! {
     static ref INTEGRITY_DATA: Mutex<Option<Value>> = Mutex::new(None);
@@ -18,7 +18,7 @@ pub async fn find_file() -> bool {
     log_debug("Starting find_file command.");
     sleep(Duration::from_secs(2)).await;
     log_debug("find_file command completed.");
-    true 
+    true
 }
 
 #[command]
@@ -48,7 +48,7 @@ pub async fn verify_compatibility() {
     log_debug("verify_compatibility command completed.");
 }
 
-const PUBLIC_KEY_BASE64: &str = "PojGI/Yadm2jtD5uJCvQehy9bU7aWqkRmlfMXxVYkpA="; 
+const PUBLIC_KEY_BASE64: &str = "PojGI/Yadm2jtD5uJCvQehy9bU7aWqkRmlfMXxVYkpA=";
 
 #[command]
 pub async fn check_integrity() -> bool {
@@ -61,7 +61,8 @@ pub async fn check_integrity() -> bool {
 
         log_debug("Attempting to read public key.");
         let public_key_bytes = general_purpose::STANDARD.decode(PUBLIC_KEY_BASE64).ok()?;
-        let peer_public_key = signature::UnparsedPublicKey::new(&signature::ED25519, &public_key_bytes);
+        let peer_public_key =
+            signature::UnparsedPublicKey::new(&signature::ED25519, &public_key_bytes);
 
         log_debug("Attempting to read integrity configuration file.");
         let mut file = File::open(file_path).ok()?;

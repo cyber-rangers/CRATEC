@@ -1,7 +1,6 @@
 use rusqlite::{Connection, Result, ToSql};
-use tauri::command;
 
-/// **Struktura pro vkládání nového záznamu (bez ID)**
+/// **Struktura pro vkládání nového záznamu (bez ID) pro EWF konfiguraci**
 #[derive(Debug, serde::Serialize)]
 pub struct NewConfig {
     pub confname: String,
@@ -12,23 +11,21 @@ pub struct NewConfig {
     pub compression_level: String,
     pub hash_types: String,
     pub ewf_format: String,
-    pub granularity_sectors: i32,
+    pub granularity_sectors: String,
     pub notes: String,
     pub offset: String,
     pub process_buffer_size: String,
     pub bytes_per_sector: String,
-    pub quiet_mode: bool,
     pub read_retry_count: String,
     pub swap_byte_pairs: bool,
     pub segment_size: String,
-    pub verbose_output: bool,
     pub zero_on_read_error: bool,
     pub use_chunk_data: bool,
 }
 
-/// **Struktura pro načítání záznamu z databáze (s ID)**
+/// **Struktura pro načítání záznamu z databáze (s ID) pro EWF konfiguraci**
 #[derive(Debug, serde::Serialize)]
-pub struct StoredConfig {
+pub struct StoredEWFConfig {
     pub id: i32, // Přidáno ID
     pub confname: String,
     pub codepage: String,
@@ -38,21 +35,20 @@ pub struct StoredConfig {
     pub compression_level: String,
     pub hash_types: String,
     pub ewf_format: String,
-    pub granularity_sectors: i32,
+    pub granularity_sectors: String,
     pub notes: String,
     pub offset: String,
     pub process_buffer_size: String,
     pub bytes_per_sector: String,
-    pub quiet_mode: bool,
     pub read_retry_count: String,
     pub swap_byte_pairs: bool,
     pub segment_size: String,
-    pub verbose_output: bool,
     pub zero_on_read_error: bool,
     pub use_chunk_data: bool,
+    pub created: String,
 }
 
-/// **Uložení nové konfigurace do databáze**
+/// **Uložení nové EWF konfigurace do databáze**
 pub fn save_ewf_config(conn: &Connection, config: NewConfig) -> Result<()> {
     let params: Vec<&dyn ToSql> = vec![
         &config.confname,
@@ -68,11 +64,9 @@ pub fn save_ewf_config(conn: &Connection, config: NewConfig) -> Result<()> {
         &config.offset,
         &config.process_buffer_size,
         &config.bytes_per_sector,
-        &config.quiet_mode,
         &config.read_retry_count,
         &config.swap_byte_pairs,
         &config.segment_size,
-        &config.verbose_output,
         &config.zero_on_read_error,
         &config.use_chunk_data,
     ];
@@ -91,20 +85,17 @@ pub fn save_ewf_config(conn: &Connection, config: NewConfig) -> Result<()> {
             offset,
             process_buffer_size,
             bytes_per_sector,
-            quiet_mode,
             read_retry_count,
             swap_byte_pairs,
             segment_size,
-            verbose_output,
             zero_on_read_error,
             use_chunk_data
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)"#,
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)"#,
         params.as_slice(),
     )?;
     Ok(())
 }
 
-/// **Asynchronní funkce pro uložení nové konfigurace**
 #[tauri::command(rename_all = "snake_case")]
 pub async fn save_new_ewf_config(
     confname: String,
@@ -115,26 +106,17 @@ pub async fn save_new_ewf_config(
     compression_level: String,
     hash_types: Vec<String>,
     ewf_format: String,
-    granularity_sectors: i32,
+    granularity_sectors: String,
     notes: String,
     offset: String,
     process_buffer_size: String,
     bytes_per_sector: String,
-    quiet_mode: bool,
     read_retry_count: String,
     swap_byte_pairs: bool,
     segment_size: String,
-    verbose_output: bool,
     zero_on_read_error: bool,
     use_chunk_data: bool,
 ) -> Result<(), String> {
-    // Otevření databáze
-    let conn = Connection::open("/var/lib/cratec/database.db")
-        .map_err(|e| format!("Error opening DB: {}", e))?;
-    
-    // Spojíme pole hash_types do jednoho řetězce (např. odděleného čárkou)
-    let hash_types_str = hash_types.join(",");
-
     let config = NewConfig {
         confname,
         codepage,
@@ -142,38 +124,204 @@ pub async fn save_new_ewf_config(
         bytes_to_read,
         compression_method,
         compression_level,
-        hash_types: hash_types_str,
+        hash_types: hash_types.join(","),
         ewf_format,
         granularity_sectors,
         notes,
         offset,
         process_buffer_size,
         bytes_per_sector,
-        quiet_mode,
         read_retry_count,
         swap_byte_pairs,
         segment_size,
-        verbose_output,
         zero_on_read_error,
         use_chunk_data,
     };
 
-    // Spuštění synchronní funkce v bloku spawn_blocking
-    tauri::async_runtime::spawn_blocking(move || {
-        save_ewf_config(&conn, config)
-    })
-    .await
-    .map_err(|e| format!("Async error: {}", e))?
-    .map_err(|e| format!("Error saving config: {}", e))?;
+    let db_conn = crate::db::DB_CONN.clone();
+
+    // Použijeme asynchronní zámek
+    let conn = db_conn.lock().await;
+
+    // Spustíme synchronní operaci v rámci asynchronního kontextu
+    save_ewf_config(&conn, config)
+        .map_err(|e| format!("Error saving config: {}", e))?;
 
     Ok(())
 }
 
-/// **Načtení všech konfigurací včetně ID**
-pub fn get_all_configs(conn: &Connection) -> Result<Vec<StoredConfig>> {
-    let mut stmt = conn.prepare(
+/// **Struktura pro vkládání nové DCFLDD konfigurace (bez ID)**
+#[derive(Debug, serde::Serialize)]
+pub struct NewDDConfig {
+    pub confname: String,
+    pub bs: i32,
+    pub count: String,
+    pub ibs: i32,
+    pub obs: i32,
+    pub seek: i32,
+    pub skip: i32,
+    pub hash_types: String,
+    pub hashwindow: i32,
+    pub hashlog: String,
+    pub status: String,
+    pub statusinterval: i32,
+    pub split: String,
+    pub splitformat: String,
+    pub vf: String,
+    pub verifylog: String,
+}
+
+/// **Synchronní funkce pro uložení DCFLDD konfigurace do databáze**
+pub fn save_dd_config(conn: &Connection, config: NewDDConfig) -> Result<()> {
+    let params: Vec<&dyn ToSql> = vec![
+        &config.confname,
+        &config.bs,
+        &config.count,
+        &config.ibs,
+        &config.obs,
+        &config.seek,
+        &config.skip,
+        &config.hash_types,
+        &config.hashwindow,
+        &config.hashlog,
+        &config.status,
+        &config.statusinterval,
+        &config.split,
+        &config.splitformat,
+        &config.vf,
+        &config.verifylog,
+    ];
+    conn.execute(
+        r#"INSERT INTO dd_config (
+            confname,
+            bs,
+            count,
+            ibs,
+            obs,
+            seek,
+            skip,
+            hash_types,
+            hashwindow,
+            hashlog,
+            status,
+            statusinterval,
+            split,
+            splitformat,
+            vf,
+            verifylog
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)"#,
+        params.as_slice(),
+    )?;
+    Ok(())
+}
+
+/// **Asynchroní Tauri command pro uložení nové DCFLDD konfigurace**
+#[tauri::command(rename_all = "snake_case")]
+pub async fn save_new_dd_config(
+    confname: String,
+    bs: String,
+    count: String,
+    ibs: String,
+    obs: String,
+    seek: String,
+    skip: String,
+    hash_types: Vec<String>,
+    hashwindow: String,
+    hashlog: String,
+    status: String,
+    statusinterval: String,
+    split: String,
+    splitformat: String,
+    vf: String,
+    verifylog: String,
+) -> Result<(), String> {
+    let conn = crate::db::DB_CONN.lock().await;
+
+    let bs_parsed = bs
+        .parse::<i32>()
+        .map_err(|e| format!("Invalid value for bs: {}", e))?;
+    let ibs_parsed = ibs
+        .parse::<i32>()
+        .map_err(|e| format!("Invalid value for ibs: {}", e))?;
+    let obs_parsed = obs
+        .parse::<i32>()
+        .map_err(|e| format!("Invalid value for obs: {}", e))?;
+    let seek_parsed = seek
+        .parse::<i32>()
+        .map_err(|e| format!("Invalid value for seek: {}", e))?;
+    let skip_parsed = skip
+        .parse::<i32>()
+        .map_err(|e| format!("Invalid value for skip: {}", e))?;
+    let hashwindow_parsed = hashwindow
+        .parse::<i32>()
+        .map_err(|e| format!("Invalid value for hashwindow: {}", e))?;
+    let statusinterval_parsed = statusinterval
+        .parse::<i32>()
+        .map_err(|e| format!("Invalid value for statusinterval: {}", e))?;
+
+    let hash_types_str = hash_types.join(",");
+
+    let config = NewDDConfig {
+        confname,
+        bs: bs_parsed,
+        count,
+        ibs: ibs_parsed,
+        obs: obs_parsed,
+        seek: seek_parsed,
+        skip: skip_parsed,
+        hash_types: hash_types_str,
+        hashwindow: hashwindow_parsed,
+        hashlog,
+        status,
+        statusinterval: statusinterval_parsed,
+        split,
+        splitformat,
+        vf,
+        verifylog,
+    };
+
+    save_dd_config(&conn, config)
+        .map_err(|e| format!("Error saving config: {}", e))?;
+
+    Ok(())
+}
+
+/// **Struktura pro načítání DD konfigurace z databáze (s ID)**
+#[derive(Debug, serde::Serialize)]
+pub struct StoredDDConfig {
+    pub id: i32,
+    pub created: String,
+    pub active: bool,
+    pub confname: String,
+    pub bs: i32,
+    pub count: String,
+    pub ibs: i32,
+    pub obs: i32,
+    pub seek: i32,
+    pub skip: i32,
+    pub hash_types: String,
+    pub hashwindow: i32,
+    pub hashlog: String,
+    pub status: String,
+    pub statusinterval: i32,
+    pub split: String,
+    pub splitformat: String,
+    pub vf: String,
+    pub verifylog: String,
+}
+
+/// **Struktura pro vrácení kombinovaných konfigurací**
+#[derive(Debug, serde::Serialize)]
+pub struct CombinedConfigs {
+    pub ewf: Vec<StoredEWFConfig>,
+    pub dd: Vec<StoredDDConfig>,
+}
+
+/// **Načtení všech aktivních konfigurací (active = true) pro EWF a DD**
+pub fn get_all_configs(conn: &Connection) -> Result<CombinedConfigs> {
+    let mut stmt_ewf = conn.prepare(
         r#"SELECT 
-            id,  -- Přidáno ID
+            id,
             confname,
             codepage,
             sectors_per_read,
@@ -187,19 +335,18 @@ pub fn get_all_configs(conn: &Connection) -> Result<Vec<StoredConfig>> {
             offset,
             process_buffer_size,
             bytes_per_sector,
-            quiet_mode,
             read_retry_count,
             swap_byte_pairs,
             segment_size,
-            verbose_output,
             zero_on_read_error,
-            use_chunk_data
-        FROM ewf_config"#
+            use_chunk_data,
+            created
+         FROM ewf_config
+         WHERE active = true"#,
     )?;
-
-    let config_iter = stmt.query_map([], |row| {
-        Ok(StoredConfig {
-            id: row.get(0)?, // ID přidáno
+    let ewf_iter = stmt_ewf.query_map([], |row| {
+        Ok(StoredEWFConfig {
+            id: row.get(0)?,
             confname: row.get(1)?,
             codepage: row.get(2)?,
             sectors_per_read: row.get(3)?,
@@ -213,77 +360,131 @@ pub fn get_all_configs(conn: &Connection) -> Result<Vec<StoredConfig>> {
             offset: row.get(11)?,
             process_buffer_size: row.get(12)?,
             bytes_per_sector: row.get(13)?,
-            quiet_mode: row.get(14)?,
-            read_retry_count: row.get(15)?,
-            swap_byte_pairs: row.get(16)?,
-            segment_size: row.get(17)?,
-            verbose_output: row.get(18)?,
-            zero_on_read_error: row.get(19)?,
-            use_chunk_data: row.get(20)?,
+            read_retry_count: row.get(14)?,
+            swap_byte_pairs: row.get(15)?,
+            segment_size: row.get(16)?,
+            zero_on_read_error: row.get(17)?,
+            use_chunk_data: row.get(18)?,
+            created: row.get(19)?,
         })
     })?;
-    
-    let mut configs = Vec::new();
-    for config in config_iter {
-        configs.push(config?);
+    let mut ewf_configs = Vec::new();
+    for config in ewf_iter {
+        ewf_configs.push(config?);
     }
-    Ok(configs)
+
+    let mut stmt_dd = conn.prepare(
+        r#"SELECT 
+            id,
+            created,
+            active,
+            confname,
+            bs,
+            count,
+            ibs,
+            obs,
+            seek,
+            skip,
+            hash_types,
+            hashwindow,
+            hashlog,
+            status,
+            statusinterval,
+            split,
+            splitformat,
+            vf,
+            verifylog
+         FROM dd_config
+         WHERE active = true"#,
+    )?;
+    let dd_iter = stmt_dd.query_map([], |row| {
+        Ok(StoredDDConfig {
+            id: row.get(0)?,
+            created: row.get(1)?,
+            active: row.get(2)?,
+            confname: row.get(3)?,
+            bs: row.get(4)?,
+            count: row.get(5)?,
+            ibs: row.get(6)?,
+            obs: row.get(7)?,
+            seek: row.get(8)?,
+            skip: row.get(9)?,
+            hash_types: row.get(10)?,
+            hashwindow: row.get(11)?,
+            hashlog: row.get(12)?,
+            status: row.get(13)?,
+            statusinterval: row.get(14)?,
+            split: row.get(15)?,
+            splitformat: row.get(16)?,
+            vf: row.get(17)?,
+            verifylog: row.get(18)?,
+        })
+    })?;
+    let mut dd_configs = Vec::new();
+    for config in dd_iter {
+        dd_configs.push(config?);
+    }
+
+    Ok(CombinedConfigs {
+        ewf: ewf_configs,
+        dd: dd_configs,
+    })
 }
 
-/// **Asynchronní příkaz pro získání všech konfigurací včetně ID**
+/// **Asynchronní příkaz pro získání všech aktivních konfigurací**
 #[tauri::command(rename_all = "snake_case")]
-pub async fn get_all_ewf_configs() -> Result<Vec<StoredConfig>, String> {
+pub async fn get_all_active_configs() -> Result<CombinedConfigs, String> {
     let conn = Connection::open("/var/lib/cratec/database.db")
         .map_err(|e| format!("Error opening DB: {}", e))?;
-    let configs = tauri::async_runtime::spawn_blocking(move || {
-        get_all_configs(&conn)
-    })
-    .await
-    .map_err(|e| format!("Async error: {}", e))?
-    .map_err(|e| format!("Error querying configs: {}", e))?;
+    let configs = tauri::async_runtime::spawn_blocking(move || get_all_configs(&conn))
+        .await
+        .map_err(|e| format!("Async error: {}", e))?
+        .map_err(|e| format!("Error querying configs: {}", e))?;
     Ok(configs)
 }
 
+/// **Funkce pro smazání nebo deaktivaci konfigurace podle ID a typu**
+pub fn delete_or_deactivate(conn: &Connection, config_id: i32, config_type: &str) -> Result<()> {
+    // Určíme příslušné tabulky na základě typu konfigurace
+    let (log_table, config_table) = match config_type {
+        "ewf" => ("copy_log_ewf", "ewf_config"),
+        "dd" => ("copy_log_dd", "dd_config"),
+        _ => return Err(rusqlite::Error::InvalidQuery),
+    };
 
-/// **Funkce pro smazání nebo deaktivaci konfigurace podle ID**
-pub fn delete_or_deactivate_config(conn: &Connection, config_id: i32) -> Result<()> {
-    // Zjistíme, zda existují záznamy v tabulce `copy_log`, které odkazují na daný `config_id`
-    let mut stmt = conn.prepare("SELECT COUNT(*) FROM copy_log_ewf WHERE config_id = ?1")?;
+    // Zjistíme, zda existují záznamy v logovací tabulce
+    let query = format!("SELECT COUNT(*) FROM {} WHERE config_id = ?1", log_table);
+    let mut stmt = conn.prepare(&query)?;
     let count: i32 = stmt.query_row([&config_id], |row| row.get(0))?;
 
     if count > 0 {
-        // Pokud existují odkazy, pouze deaktivujeme konfiguraci
-        conn.execute(
-            "UPDATE config SET active = false WHERE id = ?1",
-            [&config_id],
-        )?;
+        // Pokud existují odkazy, deaktivujeme konfiguraci
+        let update_query = format!("UPDATE {} SET active = false WHERE id = ?1", config_table);
+        conn.execute(&update_query, [&config_id])?;
         println!("Konfigurace s ID {} byla deaktivována.", config_id);
     } else {
-        // Pokud žádné odkazy neexistují, smažeme konfiguraci
-        conn.execute(
-            "DELETE FROM ewf_config WHERE id = ?1",
-            [&config_id],
-        )?;
+        // Pokud neexistují, smažeme konfiguraci
+        let delete_query = format!("DELETE FROM {} WHERE id = ?1", config_table);
+        conn.execute(&delete_query, [&config_id])?;
         println!("Konfigurace s ID {} byla odstraněna.", config_id);
     }
-    
+
     Ok(())
 }
 
-/// **Asynchronní Tauri command pro smazání nebo deaktivaci konfigurace**
+/// **Asynchroní Tauri command pro smazání nebo deaktivaci konfigurace podle ID a typu**
 #[tauri::command(rename_all = "snake_case")]
-pub async fn delete_or_deactivate_ewf_config(config_id: i32) -> Result<(), String> {
-    // Otevření databáze
+pub async fn delete_or_deactivate_config(
+    config_id: i32,
+    config_type: String,
+) -> Result<(), String> {
     let conn = Connection::open("/var/lib/cratec/database.db")
         .map_err(|e| format!("Chyba při otevírání DB: {}", e))?;
-
-    // Spustíme operaci v bloku spawn_blocking
     tauri::async_runtime::spawn_blocking(move || {
-        delete_or_deactivate_config(&conn, config_id)
+        delete_or_deactivate(&conn, config_id, &config_type)
     })
     .await
     .map_err(|e| format!("Asynchronní chyba: {}", e))?
     .map_err(|e| format!("Chyba při mazání/deaktivaci konfigurace: {}", e))?;
-
     Ok(())
 }
