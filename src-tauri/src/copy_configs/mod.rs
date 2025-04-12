@@ -154,62 +154,53 @@ pub async fn save_new_ewf_config(
 #[derive(Debug, serde::Serialize)]
 pub struct NewDDConfig {
     pub confname: String,
-    pub bs: i32,
-    pub count: String,
-    pub ibs: i32,
-    pub obs: i32,
+    pub format: String,
+    pub limit_mode: String,
     pub seek: i32,
     pub skip: i32,
-    pub hash_types: String,
-    pub hashwindow: i32,
-    pub hashlog: String,
-    pub status: String,
-    pub statusinterval: i32,
-    pub split: String,
-    pub splitformat: String,
-    pub vf: String,
-    pub verifylog: String,
+    pub hash_types: String, // joined hash algorithms (comma-separated)
+    pub hashwindow_value: i32,
+    pub hashwindow_unit: String,
+    pub split_value: String,
+    pub split_unit: String,
+    pub vf: i32,    // 1 for on, 0 for off
+    pub diffwr: i32, // 1 for on, 0 for off
+    pub notes: String,
 }
 
 /// **Synchronní funkce pro uložení DCFLDD konfigurace do databáze**
 pub fn save_dd_config(conn: &Connection, config: NewDDConfig) -> Result<()> {
     let params: Vec<&dyn ToSql> = vec![
         &config.confname,
-        &config.bs,
-        &config.count,
-        &config.ibs,
-        &config.obs,
+        &config.format,
+        &config.limit_mode,
         &config.seek,
         &config.skip,
         &config.hash_types,
-        &config.hashwindow,
-        &config.hashlog,
-        &config.status,
-        &config.statusinterval,
-        &config.split,
-        &config.splitformat,
+        &config.hashwindow_value,
+        &config.hashwindow_unit,
+        &config.split_value,
+        &config.split_unit,
         &config.vf,
-        &config.verifylog,
+        &config.diffwr,
+        &config.notes,
     ];
     conn.execute(
         r#"INSERT INTO dd_config (
             confname,
-            bs,
-            count,
-            ibs,
-            obs,
+            format,
+            limit_mode,
             seek,
             skip,
             hash_types,
-            hashwindow,
-            hashlog,
-            status,
-            statusinterval,
-            split,
-            splitformat,
+            hashwindow_value,
+            hashwindow_unit,
+            split_value,
+            split_unit,
             vf,
-            verifylog
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)"#,
+            diffwr,
+            notes
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"#,
         params.as_slice(),
     )?;
     Ok(())
@@ -219,65 +210,46 @@ pub fn save_dd_config(conn: &Connection, config: NewDDConfig) -> Result<()> {
 #[tauri::command(rename_all = "snake_case")]
 pub async fn save_new_dd_config(
     confname: String,
-    bs: String,
-    count: String,
-    ibs: String,
-    obs: String,
+    format: String,
+    limit_mode: String, // changed here to match the schema
     seek: String,
     skip: String,
     hash_types: Vec<String>,
-    hashwindow: String,
-    hashlog: String,
-    status: String,
-    statusinterval: String,
-    split: String,
-    splitformat: String,
+    hashwindow_value: String,
+    hashwindow_unit: String,
+    split_value: String,
+    split_unit: String,
     vf: String,
-    verifylog: String,
+    diffwr: String,
+    notes: String,
 ) -> Result<(), String> {
+    // Obtain the database connection (using your DB_CONN lock)
     let conn = crate::db::DB_CONN.lock().await;
 
-    let bs_parsed = bs
-        .parse::<i32>()
-        .map_err(|e| format!("Invalid value for bs: {}", e))?;
-    let ibs_parsed = ibs
-        .parse::<i32>()
-        .map_err(|e| format!("Invalid value for ibs: {}", e))?;
-    let obs_parsed = obs
-        .parse::<i32>()
-        .map_err(|e| format!("Invalid value for obs: {}", e))?;
-    let seek_parsed = seek
-        .parse::<i32>()
-        .map_err(|e| format!("Invalid value for seek: {}", e))?;
-    let skip_parsed = skip
-        .parse::<i32>()
-        .map_err(|e| format!("Invalid value for skip: {}", e))?;
-    let hashwindow_parsed = hashwindow
-        .parse::<i32>()
-        .map_err(|e| format!("Invalid value for hashwindow: {}", e))?;
-    let statusinterval_parsed = statusinterval
-        .parse::<i32>()
-        .map_err(|e| format!("Invalid value for statusinterval: {}", e))?;
+    // Parse numerical values and convert boolean-like strings
+    let seek_parsed = seek.parse::<i32>().map_err(|e| format!("Invalid seek: {}", e))?;
+    let skip_parsed = skip.parse::<i32>().map_err(|e| format!("Invalid skip: {}", e))?;
+    let hashwindow_value_parsed = hashwindow_value.parse::<i32>()
+        .map_err(|e| format!("Invalid hashwindow_value: {}", e))?;
 
-    let hash_types_str = hash_types.join(",");
+    // Convert vf and diffwr: assume "on" means 1, otherwise 0.
+    let vf_parsed = if vf == "on" { 1 } else { 0 };
+    let diffwr_parsed = if diffwr == "on" { 1 } else { 0 };
 
     let config = NewDDConfig {
         confname,
-        bs: bs_parsed,
-        count,
-        ibs: ibs_parsed,
-        obs: obs_parsed,
+        format,
+        limit_mode, // now a required parameter
         seek: seek_parsed,
         skip: skip_parsed,
-        hash_types: hash_types_str,
-        hashwindow: hashwindow_parsed,
-        hashlog,
-        status,
-        statusinterval: statusinterval_parsed,
-        split,
-        splitformat,
-        vf,
-        verifylog,
+        hash_types: hash_types.join(","),
+        hashwindow_value: hashwindow_value_parsed,
+        hashwindow_unit,
+        split_value,
+        split_unit,
+        vf: vf_parsed,
+        diffwr: diffwr_parsed,
+        notes,
     };
 
     save_dd_config(&conn, config)
@@ -286,28 +258,25 @@ pub async fn save_new_dd_config(
     Ok(())
 }
 
-/// **Struktura pro načítání DD konfigurace z databáze (s ID)**
+/// Upravená struktura pro načítání DD konfigurace z databáze (s ID)
 #[derive(Debug, serde::Serialize)]
 pub struct StoredDDConfig {
     pub id: i32,
     pub created: String,
     pub active: bool,
     pub confname: String,
-    pub bs: i32,
-    pub count: String,
-    pub ibs: i32,
-    pub obs: i32,
+    pub format: String,
+    pub limit_mode: String,
     pub seek: i32,
     pub skip: i32,
     pub hash_types: String,
-    pub hashwindow: i32,
-    pub hashlog: String,
-    pub status: String,
-    pub statusinterval: i32,
-    pub split: String,
-    pub splitformat: String,
-    pub vf: String,
-    pub verifylog: String,
+    pub hashwindow_value: i32,
+    pub hashwindow_unit: String,
+    pub split_value: String,
+    pub split_unit: String,
+    pub vf: bool,
+    pub diffwr: bool,
+    pub notes: String,
 }
 
 /// **Struktura pro vrácení kombinovaných konfigurací**
@@ -317,7 +286,7 @@ pub struct CombinedConfigs {
     pub dd: Vec<StoredDDConfig>,
 }
 
-/// **Načtení všech aktivních konfigurací (active = true) pro EWF a DD**
+/// Načtení všech aktivních konfigurací pro EWF a DD
 pub fn get_all_configs(conn: &Connection) -> Result<CombinedConfigs> {
     let mut stmt_ewf = conn.prepare(
         r#"SELECT 
@@ -379,21 +348,18 @@ pub fn get_all_configs(conn: &Connection) -> Result<CombinedConfigs> {
             created,
             active,
             confname,
-            bs,
-            count,
-            ibs,
-            obs,
+            format,
+            limit_mode,
             seek,
             skip,
             hash_types,
-            hashwindow,
-            hashlog,
-            status,
-            statusinterval,
-            split,
-            splitformat,
+            hashwindow_value,
+            hashwindow_unit,
+            split_value,
+            split_unit,
             vf,
-            verifylog
+            diffwr,
+            notes
          FROM dd_config
          WHERE active = true"#,
     )?;
@@ -403,21 +369,18 @@ pub fn get_all_configs(conn: &Connection) -> Result<CombinedConfigs> {
             created: row.get(1)?,
             active: row.get(2)?,
             confname: row.get(3)?,
-            bs: row.get(4)?,
-            count: row.get(5)?,
-            ibs: row.get(6)?,
-            obs: row.get(7)?,
-            seek: row.get(8)?,
-            skip: row.get(9)?,
-            hash_types: row.get(10)?,
-            hashwindow: row.get(11)?,
-            hashlog: row.get(12)?,
-            status: row.get(13)?,
-            statusinterval: row.get(14)?,
-            split: row.get(15)?,
-            splitformat: row.get(16)?,
-            vf: row.get(17)?,
-            verifylog: row.get(18)?,
+            format: row.get(4)?,
+            limit_mode: row.get(5)?,
+            seek: row.get(6)?,
+            skip: row.get(7)?,
+            hash_types: row.get(8)?,
+            hashwindow_value: row.get(9)?,
+            hashwindow_unit: row.get(10)?,
+            split_value: row.get(11)?,
+            split_unit: row.get(12)?,
+            vf: row.get(13)?,
+            diffwr: row.get(14)?,
+            notes: row.get(15)?,
         })
     })?;
     let mut dd_configs = Vec::new();

@@ -6,7 +6,7 @@
 
 	export let showKeyboard: boolean;
 	export let activeInput: string;
-	export let formData: Record<string, string>;
+	export let formData: Record<string, string | string[]>;
 
 	const dispatch = createEventDispatcher();
 
@@ -69,8 +69,9 @@
 	function handleKeyPress(button: string) {
 		if (!activeInput) return;
 
-		const inputEl = document.querySelector(`[name="${activeInput}"]`) as HTMLInputElement;
-		const currentValue = formData[activeInput] || '';
+		// We only modify inputs that are actually strings
+		const currentValue = formData[activeInput];
+		if (typeof currentValue !== 'string') return;
 
 		if (button === '{shift}') {
 			if (keyboard) {
@@ -80,18 +81,17 @@
 				keyboard.setOptions({ layoutName: newLayout });
 			}
 			return;
-		}
-
-		if (button === '{bksp}') {
-			formData[activeInput] = String(currentValue).slice(0, -1);
+		} else if (button === '{bksp}') {
+			formData[activeInput] = currentValue.slice(0, -1);
 		} else if (button === '{space}') {
-			formData[activeInput] += ' ';
+			formData[activeInput] = currentValue + ' ';
 		} else {
-			formData[activeInput] += button;
+			formData[activeInput] = currentValue + button;
 		}
 
+		const inputEl = document.querySelector(`[name="${activeInput}"]`) as HTMLInputElement;
 		if (inputEl) {
-			inputEl.value = formData[activeInput];
+			inputEl.value = formData[activeInput] as string;
 			inputEl.focus();
 			const end = inputEl.value.length;
 			inputEl.setSelectionRange(end, end);

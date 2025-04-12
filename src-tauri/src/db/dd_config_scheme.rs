@@ -7,25 +7,25 @@ pub fn initialize_dd_config_scheme(conn: &Connection) -> Result<()> {
             created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             active BOOLEAN NOT NULL DEFAULT true,
             confname TEXT NOT NULL,
-            bs INTEGER NOT NULL DEFAULT 32768
-                CHECK(bs IN (32768, 65536, 131072, 262144, 524288, 1048576, 1572864, 2097152, 3145728, 4194304, 5242880, 6291456, 7340032, 8388608)),
-            count TEXT NOT NULL DEFAULT 'whole'
-                CHECK(count IN ('whole', 'ask')),
-            ibs INTEGER NOT NULL DEFAULT 32768,
-            obs INTEGER NOT NULL DEFAULT 32768,
+            format TEXT NOT NULL DEFAULT 'auto'
+                CHECK(format IN ('auto','512','1024','2048')),
+            limit_mode TEXT NOT NULL DEFAULT 'whole'
+                CHECK(limit_mode IN ('whole','ask')),
             seek INTEGER NOT NULL DEFAULT 0,
             skip INTEGER NOT NULL DEFAULT 0,
             hash_types TEXT NOT NULL DEFAULT 'md5',
-            hashwindow INTEGER NOT NULL DEFAULT 4096,
-            hashlog TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'on'
-                CHECK(status IN ('on', 'off')),
-            statusinterval INTEGER NOT NULL DEFAULT 256,
-            split TEXT NOT NULL DEFAULT 'ask'
-                CHECK(split IN ('ask', 'disabled')),
-            splitformat TEXT NOT NULL DEFAULT 'nnn',
-            vf TEXT NOT NULL DEFAULT 'ask',
-            verifylog TEXT NOT NULL DEFAULT ''
+            hashwindow_value INTEGER NOT NULL DEFAULT 1,
+            hashwindow_unit TEXT NOT NULL DEFAULT 'MB'
+                CHECK(hashwindow_unit IN ('MB','GB')),
+            split_value TEXT NOT NULL DEFAULT 'whole',
+            split_unit TEXT NOT NULL DEFAULT 'MB'
+                CHECK(split_unit IN ('MB','GB')),
+            vf BOOLEAN NOT NULL DEFAULT 0
+                CHECK(vf IN (0,1)),
+            diffwr BOOLEAN NOT NULL DEFAULT 0
+                CHECK(diffwr IN (0,1)),
+            notes TEXT NOT NULL DEFAULT 'ask'
+                CHECK(notes IN ('ask','none'))
         )"#,
         [],
     )?;

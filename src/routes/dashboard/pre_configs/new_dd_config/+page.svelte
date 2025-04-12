@@ -1,323 +1,686 @@
 <script lang="ts">
-	import { invoke } from '@tauri-apps/api/core';
-	import { goto } from '$app/navigation'; // Přidáno pro přesměrování
-	import VirtualKeyboard from '$lib/components/VirtualKeyboard.svelte';
+    import { invoke } from '@tauri-apps/api/core';
+    import { goto } from '$app/navigation';
+    import VirtualKeyboard from '$lib/components/VirtualKeyboard.svelte';
+    import { Popover, Combobox } from '@skeletonlabs/skeleton-svelte';
+    import { Info, X } from 'lucide-svelte';
 
-	let formData = {
-		confname: '', // Název konfigurace
-		bs: '32768', // Výchozí velikost bloku (32 KB)
-		count: 'whole', // Počet bloků k získání
-		ibs: '32768', // Velikost vstupního bloku
-		obs: '32768', // Velikost výstupního bloku
-		seek: '0', // Seek offset na začátku výstupu
-		skip: '0', // Skip offset na začátku vstupu
-		hash_types: ['md5'], // Výchozí hash (možnost více hashů)
-		hashwindow: '4096', // Počet bajtů na hash okno
-		hashlog: '', // Log soubor pro hash
-		status: 'on', // Zobrazovat status zprávy
-		statusinterval: '256', // Interval status zpráv
-		split: 'ask', // Rozdělit soubory po určité velikosti
-		splitformat: 'nnn', // Formát rozdělení souboru
-		vf: 'ask', // Ověření souboru
-		verifylog: '', // Log soubor pro ověření
+    interface NewDDConfig {
+        [key: string]: string | string[];
+        confname: string;
+        format: string;
+        limit_mode: string;
+        seek: string;
+        skip: string;
+        hash_types: string[];
+        hashwindow_value: string;
+        hashwindow_unit: string;
+        split_value: string;
+        split_unit: string;
+        vf: string;
+        diffwr: string;
+        notes: string;
+    }
 
-		// Nové parametry:
-		conv: 'noerror,sync', // Ignorovat chyby, chybějící data doplnit nulami
-		errlog: '', // Soubor pro chybové hlášky
-		hashformat: 'hex', // Formát průběžného hashe
-		totalhashformat: 'hex', // Formát celkového hashe
-		hashconv: 'before', // Hashovat před konverzemi
-		diffwr: 'off', // Neporovnává a nepřepisuje jen změněné bloky
-		sizeprobe: 'if' // Velikost pro % indikátor – dle vstupního souboru/zařízení
-	};
+    let formData: NewDDConfig = {
+        confname: '',
+        format: 'auto',
+        limit_mode: 'whole',
+        seek: '0',
+        skip: '0',
+        hash_types: ['md5'],
+        hashwindow_value: '1',
+        hashwindow_unit: 'MB',
+        split_value: '',
+        split_unit: 'MB',
+        vf: 'off',
+        diffwr: 'off',
+        notes: 'ask'
+    };
 
-	let showKeyboard = false;
-	let activeInput = '';
+    let confnamePopover = false;
+    let formatPopover = false;
+    let limitPopover = false;
+    let seekPopover = false;
+    let skipPopover = false;
+    let hashPopover = false;
+    let hashWindowPopover = false;
+    let splitPopover = false;
+    let vfPopover = false;
+    let diffwrPopover = false;
+    let notesPopover = false;
 
-	function openKeyboard(inputName: string) {
-		activeInput = inputName;
-		showKeyboard = true;
-	}
+    const formatOptions = [
+        { label: 'Automatická detekce', value: 'auto' },
+        { label: '512', value: '512' },
+        { label: '1024', value: '1024' },
+        { label: '2048', value: '2048' }
+    ];
 
-	function closeKeyboard() {
-		showKeyboard = false;
-		activeInput = '';
-	}
+    const limitOptions = [
+        { label: 'Celý disk', value: 'whole' },
+        { label: 'Dotázat', value: 'ask' }
+    ];
 
-	async function onFormSubmit(): Promise<void> {
-		try {
-			// Uložíme novou konfiguraci vyvoláním rust funkce:
-			const result = await invoke('save_new_dd_config', formData);
-			console.log('Konfigurace DCFLDD byla uložena:', formData);
+    const offsetOptions = [
+        { label: '0', value: '0' },
+        { label: 'Dotázat', value: 'ask' }
+    ];
 
-			// Po úspěšném uložení přesměrujeme uživatele na přehled konfigurací
-			goto('/dashboard/pre_configs');
-		} catch (error) {
-			console.error('Chyba při odesílání formuláře:', error);
-			// Můžete např. zobrazit toast, chybovou hlášku atd.
-		}
-	}
+    const diffwrOptions = [
+        { label: 'off', value: 'off' },
+        { label: 'on', value: 'on' }
+    ];
+
+    const notesOptions = [
+        { label: 'Dotázat se', value: 'ask' },
+        { label: 'Neuvádět', value: 'none' }
+    ];
+
+    const hashTypeOptions = [
+        { label: 'MD5', value: 'md5' },
+        { label: 'SHA1', value: 'sha1' },
+        { label: 'SHA256', value: 'sha256' },
+        { label: 'SHA384', value: 'sha384' },
+        { label: 'SHA512', value: 'sha512' }
+    ];
+
+    const hashUnitOptions = [
+        { label: 'MB', value: 'MB' },
+        { label: 'GB', value: 'GB' }
+    ];
+
+    const splitUnitOptions = [
+        { label: 'MB', value: 'MB' },
+        { label: 'GB', value: 'GB' }
+    ];
+
+    function getExplanation(field: string): string {
+        switch (field) {
+            case 'confname':
+                return 'Název konfigurace pro identifikaci akvizice.';
+            case 'format':
+                return 'Velikost bloku (auto, 512, 1024 nebo 2048).';
+            case 'limit_mode':
+                return 'Určuje, zda číst celý disk nebo zobrazit dotaz.';
+            case 'seek':
+                return 'Nastavení offsetu výstupu.';
+            case 'skip':
+                return 'Nastavení offsetu vstupu.';
+            case 'hash_types':
+                return 'Seznam hashovacích algoritmů (lze vybrat více).';
+            case 'hash_window':
+                return 'Velikost mezibloku pro průběžný hash.';
+            case 'split':
+                return 'Rozdělení výstupního souboru na více částí. "whole" znamená nerozdělovat.';
+            case 'vf':
+                return 'Dodatečné ověření, které prodlouží proces a nelze jej použít, pokud je výstup rozdělen na více souborů.';
+            case 'diffwr':
+                return 'Porovnání/změna bloků. off = vypnuto, on = zapnuto.';
+            case 'notes':
+                return 'Poznámky k akvizici: Dotázat nebo Neuvádět.';
+            default:
+                return 'Popis není k dispozici.';
+        }
+    }
+
+    let showKeyboard = false;
+    let activeInput = '';
+
+    function openKeyboard(inputName: string) {
+        activeInput = inputName;
+        showKeyboard = true;
+    }
+
+    function closeKeyboard() {
+        showKeyboard = false;
+        activeInput = '';
+    }
+
+    function popoverClose() {
+        confnamePopover = false;
+        formatPopover = false;
+        limitPopover = false;
+        seekPopover = false;
+        skipPopover = false;
+        hashPopover = false;
+        hashWindowPopover = false;
+        splitPopover = false;
+        vfPopover = false;
+        diffwrPopover = false;
+        notesPopover = false;
+    }
+
+    function toggleHashType(value: string) {
+        if (formData.hash_types.includes(value)) {
+            formData.hash_types = formData.hash_types.filter(v => v !== value);
+        } else {
+            formData.hash_types = [...formData.hash_types, value];
+        }
+    }
+
+    function toggleVF() {
+        formData.vf = formData.vf === 'on' ? 'off' : 'on';
+    }
+
+    function isWholeSplit() {
+        return !formData.split_value.trim();
+    }
+
+    async function onFormSubmit(): Promise<void> {
+        try {
+            if (isWholeSplit()) {
+                formData.split_value = 'whole';
+            }
+            await invoke('save_new_dd_config', { ...formData });
+            goto('/dashboard/pre_configs');
+        } catch (error) {
+            console.error('Chyba při ukládání:', error);
+        }
+    }
 </script>
 
 <main class="page-wrapper">
-	<form class="modal-form" on:submit|preventDefault={onFormSubmit}>
-		<label class="label">
-			<span>Název konfigurace</span>
-			<input
-				class="input"
-				name="confname"
-				type="text"
-				maxlength="12"
-				bind:value={formData.confname}
-				required
-				on:focus={() => openKeyboard('confname')}
-				readonly
-			/>
-		</label>
+    <form class="modal-form" on:submit|preventDefault={onFormSubmit}>
 
-		<label class="label">
-			<span>Velikost bloku (bs)</span>
-			<select class="select" bind:value={formData.bs}>
-				<option value="32768">32 KB (výchozí)</option>
-				<option value="65536">64 KB</option>
-				<option value="131072">128 KB</option>
-				<option value="262144">256 KB</option>
-				<option value="524288">512 KB</option>
-				<option value="1048576">1 MB</option>
-				<option value="1572864">1,5 MB</option>
-				<option value="2097152">2 MB</option>
-				<option value="3145728">3 MB</option>
-				<option value="4194304">4 MB</option>
-				<option value="5242880">5 MB</option>
-				<option value="6291456">6 MB</option>
-				<option value="7340032">7 MB</option>
-				<option value="8388608">8 MB</option>
-			</select>
-		</label>
+        <!-- Název konfigurace -->
+        <label class="label">
+            <div class="flex items-center gap-2">
+                <span>Název konfigurace</span>
+                <Popover
+                    open={confnamePopover}
+                    onOpenChange={(e) => (confnamePopover = e.open)}
+                    triggerBase="btn-icon preset-tonal"
+                    contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
+                    arrow
+                    arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+                    zIndex="999"
+                >
+                    {#snippet trigger()}
+                        <Info />
+                    {/snippet}
+                    {#snippet content()}
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-lg font-bold">Info</h2>
+                            <button class="btn-icon" on:click={() => (confnamePopover = false)}>
+                                <X />
+                            </button>
+                        </div>
+                        {getExplanation('confname')}
+                    {/snippet}
+                </Popover>
+            </div>
+            <input
+                class="input"
+                name="confname"
+                type="text"
+                maxlength="12"
+                bind:value={formData.confname}
+                required
+                on:focus={() => openKeyboard('confname')}
+                readonly
+            />
+        </label>
 
-		<label class="label">
-			<span>Počet bloků k získání</span>
-			<select class="select" bind:value={formData.count}>
-				<option value="whole">Celý disk (výchozí)</option>
-				<option value="ask">Zeptat se</option>
-			</select>
-		</label>
+        <!-- Formát bloků -->
+        <label class="label">
+            <div class="flex items-center gap-2">
+                <span>Formát bloků</span>
+                <Popover
+                    open={formatPopover}
+                    onOpenChange={(e) => (formatPopover = e.open)}
+                    triggerBase="btn-icon preset-tonal"
+                    contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
+                    arrow
+                    arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+                    zIndex="999"
+                >
+                    {#snippet trigger()}
+                        <Info />
+                    {/snippet}
+                    {#snippet content()}
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-lg font-bold">Info</h2>
+                            <button class="btn-icon" on:click={() => (formatPopover = false)}>
+                                <X />
+                            </button>
+                        </div>
+                        {getExplanation('format')}
+                    {/snippet}
+                </Popover>
+            </div>
+            <Combobox
+                multiple={false}
+                data={formatOptions}
+                defaultValue={[formData.format]}
+                value={[formData.format]}
+                onValueChange={(e) => (formData.format = e.value[0])}
+                placeholder="Vyberte..."
+            />
+        </label>
 
-		<label class="label">
-			<span>Velikost vstupního bloku (ibs)</span>
-			<input class="input" name="ibs" type="text" bind:value={formData.ibs} />
-		</label>
+        <!-- Limit -->
+        <label class="label">
+            <div class="flex items-center gap-2">
+                <span>Limit (celý disk/dotázat)</span>
+                <Popover
+                    open={limitPopover}
+                    onOpenChange={(e) => (limitPopover = e.open)}
+                    triggerBase="btn-icon preset-tonal"
+                    contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
+                    arrow
+                    arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+                    zIndex="999"
+                >
+                    {#snippet trigger()}
+                        <Info />
+                    {/snippet}
+                    {#snippet content()}
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-lg font-bold">Info</h2>
+                            <button class="btn-icon" on:click={() => (limitPopover = false)}>
+                                <X />
+                            </button>
+                        </div>
+                        {getExplanation('limit_mode')}
+                    {/snippet}
+                </Popover>
+            </div>
+            <Combobox
+                multiple={false}
+                data={limitOptions}
+                defaultValue={[formData.limit_mode]}
+                value={[formData.limit_mode]}
+                onValueChange={(e) => (formData.limit_mode = e.value[0])}
+                placeholder="Vyberte..."
+            />
+        </label>
 
-		<label class="label">
-			<span>Velikost výstupního bloku (obs)</span>
-			<input class="input" name="obs" type="text" bind:value={formData.obs} />
-		</label>
+        <!-- Seek offset -->
+        <label class="label">
+            <div class="flex items-center gap-2">
+                <span>Seek offset (výstup)</span>
+                <Popover
+                    open={seekPopover}
+                    onOpenChange={(e) => (seekPopover = e.open)}
+                    triggerBase="btn-icon preset-tonal"
+                    contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
+                    arrow
+                    arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+                    zIndex="999"
+                >
+                    {#snippet trigger()}
+                        <Info />
+                    {/snippet}
+                    {#snippet content()}
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-lg font-bold">Info</h2>
+                            <button class="btn-icon" on:click={() => (seekPopover = false)}>
+                                <X />
+                            </button>
+                        </div>
+                        {getExplanation('seek')}
+                    {/snippet}
+                </Popover>
+            </div>
+            <Combobox
+                multiple={false}
+                data={offsetOptions}
+                defaultValue={[formData.seek]}
+                value={[formData.seek]}
+                onValueChange={(e) => (formData.seek = e.value[0])}
+                placeholder="Vyberte..."
+            />
+        </label>
 
-		<label class="label">
-			<span>Seek offset</span>
-			<input class="input" name="seek" type="text" bind:value={formData.seek} />
-		</label>
+        <!-- Skip offset -->
+        <label class="label">
+            <div class="flex items-center gap-2">
+                <span>Skip offset (vstup)</span>
+                <Popover
+                    open={skipPopover}
+                    onOpenChange={(e) => (skipPopover = e.open)}
+                    triggerBase="btn-icon preset-tonal"
+                    contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
+                    arrow
+                    arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+                    zIndex="999"
+                >
+                    {#snippet trigger()}
+                        <Info />
+                    {/snippet}
+                    {#snippet content()}
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-lg font-bold">Info</h2>
+                            <button class="btn-icon" on:click={() => (skipPopover = false)}>
+                                <X />
+                            </button>
+                        </div>
+                        {getExplanation('skip')}
+                    {/snippet}
+                </Popover>
+            </div>
+            <Combobox
+                multiple={false}
+                data={offsetOptions}
+                defaultValue={[formData.skip]}
+                value={[formData.skip]}
+                onValueChange={(e) => (formData.skip = e.value[0])}
+                placeholder="Vyberte..."
+            />
+        </label>
 
-		<label class="label">
-			<span>Skip offset</span>
-			<input class="input" name="skip" type="text" bind:value={formData.skip} />
-		</label>
+        <!-- Hashovací algoritmy -->
+        <label class="label">
+            <div class="flex items-center gap-2">
+                <span>Vybrané hashovací algoritmy</span>
+                <Popover
+                    open={hashPopover}
+                    onOpenChange={(e) => (hashPopover = e.open)}
+                    triggerBase="btn-icon preset-tonal"
+                    contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
+                    arrow
+                    arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+                    zIndex="999"
+                >
+                    {#snippet trigger()}
+                        <Info />
+                    {/snippet}
+                    {#snippet content()}
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-lg font-bold">Info</h2>
+                            <button class="btn-icon" on:click={() => (hashPopover = false)}>
+                                <X />
+                            </button>
+                        </div>
+                        {getExplanation('hash_types')}
+                    {/snippet}
+                </Popover>
+            </div>
+            <div class="flex gap-4">
+                {#each hashTypeOptions as option}
+                    <label class="flex items-center">
+                        <input
+                            type="checkbox"
+                            class="checkbox"
+                            value={option.value}
+                            checked={formData.hash_types.includes(option.value)}
+                            on:change={() => toggleHashType(option.value)}
+                        />
+                        <span class="ml-2">{option.label}</span>
+                    </label>
+                {/each}
+            </div>
+        </label>
 
-		<label class="label">
-			<span>Vybrané hashovací algoritmy</span>
-			<div class="flex gap-4">
-				<label class="flex items-center">
-					<input type="checkbox" bind:group={formData.hash_types} value="md5" />
-					<span class="ml-2">MD5</span>
-				</label>
-				<label class="flex items-center">
-					<input type="checkbox" bind:group={formData.hash_types} value="sha1" />
-					<span class="ml-2">SHA1</span>
-				</label>
-				<label class="flex items-center">
-					<input type="checkbox" bind:group={formData.hash_types} value="sha256" />
-					<span class="ml-2">SHA256</span>
-				</label>
-				<label class="flex items-center">
-					<input type="checkbox" bind:group={formData.hash_types} value="sha384" />
-					<span class="ml-2">SHA384</span>
-				</label>
-				<label class="flex items-center">
-					<input type="checkbox" bind:group={formData.hash_types} value="sha512" />
-					<span class="ml-2">SHA512</span>
-				</label>
-			</div>
-		</label>
+        <!-- Hash okno -->
+        <label class="label">
+            <div class="flex items-center gap-2">
+                <span>Hash okno</span>
+                <Popover
+                    open={hashWindowPopover}
+                    onOpenChange={(e) => (hashWindowPopover = e.open)}
+                    triggerBase="btn-icon preset-tonal"
+                    contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
+                    arrow
+                    arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+                    zIndex="999"
+                >
+                    {#snippet trigger()}
+                        <Info />
+                    {/snippet}
+                    {#snippet content()}
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-lg font-bold">Info</h2>
+                            <button class="btn-icon" on:click={() => (hashWindowPopover = false)}>
+                                <X />
+                            </button>
+                        </div>
+                        {getExplanation('hash_window')}
+                    {/snippet}
+                </Popover>
+            </div>
+            <div class="flex gap-4 items-center">
+                <input
+                    class="input"
+                    type="number"
+                    min="1"
+                    bind:value={formData.hashwindow_value}
+                    on:focus={() => openKeyboard('hashwindow_value')}
+                />
+                <Combobox
+                    multiple={false}
+                    data={hashUnitOptions}
+                    defaultValue={[formData.hashwindow_unit]}
+                    value={[formData.hashwindow_unit]}
+                    onValueChange={(e) => (formData.hashwindow_unit = e.value[0])}
+                    placeholder="Vyberte..."
+                />
+            </div>
+        </label>
 
-		<label class="label">
-			<span>Počet bajtů na hash okno (hashwindow)</span>
-			<input class="input" name="hashwindow" type="number" bind:value={formData.hashwindow} />
-		</label>
+        <!-- Rozdělení souboru -->
+        <label class="label">
+            <div class="flex items-center gap-2">
+                <span>Rozdělení souboru</span>
+                <Popover
+                    open={splitPopover}
+                    onOpenChange={(e) => (splitPopover = e.open)}
+                    triggerBase="btn-icon preset-tonal"
+                    contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
+                    arrow
+                    arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+                    zIndex="999"
+                >
+                    {#snippet trigger()}
+                        <Info />
+                    {/snippet}
+                    {#snippet content()}
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-lg font-bold">Info</h2>
+                            <button class="btn-icon" on:click={() => (splitPopover = false)}>
+                                <X />
+                            </button>
+                        </div>
+                        {getExplanation('split')}
+                    {/snippet}
+                </Popover>
+            </div>
+            <div class="flex gap-4 items-center">
+                <input
+                    class="input"
+                    type="number"
+                    min="1"
+                    placeholder="whole"
+                    bind:value={formData.split_value}
+                    on:focus={() => openKeyboard('split_value')}
+                />
+                <Combobox
+                    multiple={false}
+                    data={splitUnitOptions}
+                    defaultValue={[formData.split_unit]}
+                    value={[formData.split_unit]}
+                    onValueChange={(e) => (formData.split_unit = e.value[0])}
+                    placeholder="Vyberte..."
+                    disabled={isWholeSplit()}
+                />
+            </div>
+        </label>
 
-		<label class="label">
-			<span>Log soubor pro hash</span>
-			<input class="input" name="hashlog" type="text" bind:value={formData.hashlog} />
-		</label>
+        <!-- vf (checkbox, disabled pokud splitValue != '' ) -->
+        <label class="label">
+            <div class="flex items-center gap-2">
+                <span>Ověření souboru (vf)</span>
+                <Popover
+                    open={vfPopover}
+                    onOpenChange={(e) => (vfPopover = e.open)}
+                    triggerBase="btn-icon preset-tonal"
+                    contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
+                    arrow
+                    arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+                    zIndex="999"
+                >
+                    {#snippet trigger()}
+                        <Info />
+                    {/snippet}
+                    {#snippet content()}
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-lg font-bold">Info</h2>
+                            <button class="btn-icon" on:click={() => (vfPopover = false)}>
+                                <X />
+                            </button>
+                        </div>
+                        {getExplanation('vf')}
+                    {/snippet}
+                </Popover>
+            </div>
+            <label class="flex items-center">
+                <input
+                    type="checkbox"
+                    class="checkbox"
+                    on:change={toggleVF}
+                    checked={formData.vf === 'on'}
+                    disabled={!isWholeSplit()}
+                />
+                <span class="ml-2">Zapnout dodatečné ověření</span>
+            </label>
+        </label>
 
-		<label class="label">
-			<span>Zobrazovat status zprávy</span>
-			<select class="select" bind:value={formData.status}>
-				<option value="on">Zapnuto</option>
-				<option value="off">Vypnuto</option>
-			</select>
-		</label>
+        <!-- diffwr -->
+        <label class="label">
+            <div class="flex items-center gap-2">
+                <span>Porovnání/změna bloků (diffwr)</span>
+                <Popover
+                    open={diffwrPopover}
+                    onOpenChange={(e) => (diffwrPopover = e.open)}
+                    triggerBase="btn-icon preset-tonal"
+                    contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
+                    arrow
+                    arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+                    zIndex="999"
+                >
+                    {#snippet trigger()}
+                        <Info />
+                    {/snippet}
+                    {#snippet content()}
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-lg font-bold">Info</h2>
+                            <button class="btn-icon" on:click={() => (diffwrPopover = false)}>
+                                <X />
+                            </button>
+                        </div>
+                        {getExplanation('diffwr')}
+                    {/snippet}
+                </Popover>
+            </div>
+            <Combobox
+                multiple={false}
+                data={diffwrOptions}
+                defaultValue={[formData.diffwr]}
+                value={[formData.diffwr]}
+                onValueChange={(e) => (formData.diffwr = e.value[0])}
+                placeholder="Vyberte..."
+            />
+        </label>
+        
+        <!-- Notes -->
+        <label class="label">
+            <div class="flex items-center gap-2">
+                <span>Poznámky</span>
+                <Popover
+                    open={notesPopover}
+                    onOpenChange={(e) => (notesPopover = e.open)}
+                    triggerBase="btn-icon preset-tonal"
+                    contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
+                    arrow
+                    arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+                    zIndex="999"
+                >
+                    {#snippet trigger()}
+                        <Info />
+                    {/snippet}
+                    {#snippet content()}
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-lg font-bold">Info</h2>
+                            <button class="btn-icon" on:click={() => (notesPopover = false)}>
+                                <X />
+                            </button>
+                        </div>
+                        {getExplanation('notes')}
+                    {/snippet}
+                </Popover>
+            </div>
+            <Combobox
+                multiple={false}
+                data={notesOptions}
+                defaultValue={[formData.notes]}
+                value={[formData.notes]}
+                onValueChange={(e) => (formData.notes = e.value[0])}
+                placeholder="Vyberte..."
+            />
+        </label>
 
-		<label class="label">
-			<span>Interval status zpráv (statusinterval)</span>
-			<input
-				class="input"
-				name="statusinterval"
-				type="number"
-				bind:value={formData.statusinterval}
-			/>
-		</label>
-
-		<label class="label">
-			<span>Rozdělení souborů po velikosti (split)</span>
-			<select class="select" bind:value={formData.split}>
-				<option value="ask">Zeptat se</option>
-				<option value="disabled">Zakázáno</option>
-			</select>
-		</label>
-
-		<label class="label">
-			<span>Formát rozdělení souboru (splitformat)</span>
-			<input class="input" name="splitformat" type="text" bind:value={formData.splitformat} />
-		</label>
-
-		<label class="label">
-			<span>Ověření souboru (vf)</span>
-			<input class="input" name="vf" type="text" bind:value={formData.vf} />
-		</label>
-
-		<label class="label">
-			<span>Log soubor pro ověření</span>
-			<input class="input" name="verifylog" type="text" bind:value={formData.verifylog} />
-		</label>
-
-		<!-- Nové parametry: conv, errlog, hashformat, totalhashformat, hashconv, diffwr, sizeprobe -->
-		<label class="label">
-			<span>Chování při chybách (conv)</span>
-			<input class="input" name="conv" type="text" bind:value={formData.conv} />
-		</label>
-
-		<label class="label">
-			<span>Log soubor pro chyby (errlog)</span>
-			<input class="input" name="errlog" type="text" bind:value={formData.errlog} />
-		</label>
-
-		<label class="label">
-			<span>Formát průběžného hashe (hashformat)</span>
-			<select class="select" bind:value={formData.hashformat}>
-				<option value="hex">hex</option>
-				<option value="base64">base64</option>
-			</select>
-		</label>
-
-		<label class="label">
-			<span>Formát celkového hashe (totalhashformat)</span>
-			<select class="select" bind:value={formData.totalhashformat}>
-				<option value="hex">hex</option>
-				<option value="base64">base64</option>
-			</select>
-		</label>
-
-		<label class="label">
-			<span>Kdy provádět hashování (hashconv)</span>
-			<select class="select" bind:value={formData.hashconv}>
-				<option value="before">before</option>
-				<option value="after">after</option>
-			</select>
-		</label>
-
-		<label class="label">
-			<span>Porovnání bloků a zápis jen změněných (diffwr)</span>
-			<select class="select" bind:value={formData.diffwr}>
-				<option value="off">off</option>
-				<option value="on">on</option>
-			</select>
-		</label>
-
-		<label class="label">
-			<span>Velikost pro procentuální indikátor (sizeprobe)</span>
-			<select class="select" bind:value={formData.sizeprobe}>
-				<option value="if">if (zdroj)</option>
-				<option value="of">of (výstup)</option>
-			</select>
-		</label>
-
-		<div class="flex justify-end">
-			<button type="submit" class="btn preset-filled-primary-500">Uložit</button>
-		</div>
-	</form>
+        <div class="flex justify-end">
+            <button type="submit" class="btn preset-filled-primary-500">Uložit</button>
+        </div>
+    </form>
 </main>
 
 <VirtualKeyboard
-	bind:showKeyboard
-	bind:activeInput
-	bind:formData
-	on:closeKeyboard={closeKeyboard}
+    bind:showKeyboard
+    bind:activeInput
+    bind:formData
+    on:closeKeyboard={closeKeyboard}
 />
 
 <style>
-	.modal-form {
-		width: 90vh;
-		max-width: 800px;
-		margin: auto;
-		overflow-y: auto;
-		overscroll-behavior: contain;
-		-webkit-overflow-scrolling: touch;
-		background-color: rgba(var(--color-surface-800) / 1);
-		border-radius: 10px;
-		padding: 20px;
-	}
-	.modal-form::-webkit-scrollbar {
-		width: 1px;
-		background-color: transparent;
-	}
-	.page-wrapper {
-		padding: 2rem;
-		max-width: 900px;
-		margin: auto;
-	}
-
-	.label {
-		display: flex;
-		flex-direction: column;
-	}
-
-	.input,
-	.select {
-		padding: 0.5rem;
-		border: 1px solid #ccc;
-		border-radius: 4px;
-		margin-top: 0.25rem;
-	}
-
-	.flex {
-		display: flex;
-	}
-
-	.gap-4 {
-		gap: 1rem;
-	}
-
-	.items-center {
-		align-items: center;
-	}
-
-	.ml-2 {
-		margin-left: 0.5rem;
-	}
-
-	.form-footer {
-		margin-top: 2rem;
-		display: flex;
-		justify-content: flex-end;
-	}
+    .modal-form {
+        width: 90vh;
+        max-width: 800px;
+        margin: auto;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+        background-color: rgba(var(--color-surface-800) / 1);
+        border-radius: 10px;
+        padding: 20px;
+    }
+    .modal-form::-webkit-scrollbar {
+        width: 1px;
+        background-color: transparent;
+    }
+    .page-wrapper {
+        padding: 2rem;
+        max-width: 900px;
+        margin: auto;
+    }
+    .label {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 1rem;
+    }
+    .input,
+    .select {
+        padding: 0.5rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        margin-top: 0.25rem;
+    }
+    .flex {
+        display: flex;
+    }
+    .gap-4 {
+        gap: 1rem;
+    }
+    .items-center {
+        align-items: center;
+    }
+    .ml-2 {
+        margin-left: 0.5rem;
+    }
+    .form-footer {
+        margin-top: 2rem;
+        display: flex;
+        justify-content: flex-end;
+    }
 </style>
