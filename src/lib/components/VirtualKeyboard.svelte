@@ -2,13 +2,11 @@
 	import { Modal } from '@skeletonlabs/skeleton-svelte';
 	import SimpleKeyboard from 'simple-keyboard';
 	import 'simple-keyboard/build/css/index.css';
-	import { onDestroy, tick, createEventDispatcher } from 'svelte';
+	import { onDestroy, tick} from 'svelte';
 
 	export let showKeyboard: boolean;
 	export let activeInput: string;
 	export let formData: Record<string, string | string[]>;
-
-	const dispatch = createEventDispatcher();
 
 	let keyboardContainer: HTMLDivElement;
 	let keyboard: SimpleKeyboard | null = null;
@@ -17,10 +15,10 @@
 	let posY = window.innerHeight - 300;
 
 	let isDragging = false;
-	let dragStartX = 0,
-		dragStartY = 0;
-	let origX = posX,
-		origY = posY;
+	let dragStartX = 0;
+	let dragStartY = 0;
+	let origX = posX;
+	let origY = posY;
 
 	function onDragStart(e: PointerEvent | TouchEvent) {
 		e.preventDefault();
@@ -68,14 +66,12 @@
 
 	function handleKeyPress(button: string) {
 		if (!activeInput) return;
-
-		// We only modify inputs that are actually strings
 		const currentValue = formData[activeInput];
+
 		if (typeof currentValue !== 'string') return;
 
 		if (button === '{shift}') {
 			if (keyboard) {
-				// přidána kontrola, že keyboard není null
 				const currentLayout = keyboard.options.layoutName;
 				const newLayout = currentLayout === 'default' ? 'shift' : 'default';
 				keyboard.setOptions({ layoutName: newLayout });
@@ -105,6 +101,11 @@
 				onKeyPress: handleKeyPress,
 				physicalKeyboardHighlight: true,
 				theme: 'hg-theme-default cratec-theme',
+
+				// DŮLEŽITÉ: vynutíme zpracování dotykových i myš událostí
+				useTouchEvents: true,
+				useMouseEvents: true,
+
 				layout: {
 					default: [
 						'ě š č ř ž ý á í é -',
@@ -147,7 +148,7 @@
 	});
 
 	function closeKeyboard() {
-		dispatch('closeKeyboard');
+		showKeyboard = false;
 	}
 </script>
 
@@ -169,7 +170,15 @@
 				<div bind:this={keyboardContainer} class="simple-keyboard"></div>
 			</div>
 			<div class="action-buttons">
-				<button class="drag-button btn preset-filled" on:pointerdown={onDragStart}>⇕</button>
+				<!-- Tlačítko pro tažení (drag) klávesnice -->
+				<button
+					class="drag-button btn preset-filled"
+					on:pointerdown={onDragStart}
+					on:touchstart={onDragStart}
+				>
+					⇕
+				</button>
+				<!-- Tlačítko pro zavření klávesnice -->
 				<button class="close-button btn preset-filled" on:click={closeKeyboard}>✖</button>
 			</div>
 		</div>
@@ -178,9 +187,11 @@
 
 <style>
 	:global(.simple-keyboard) {
-		width: 70vw; /* 100% šířky viewportu */
+		width: 70vw;
 		max-width: 70vw;
 		background: var(--color-surface-800);
+		pointer-events: auto;
+		touch-action: none;
 	}
 
 	.keyboard-container {
@@ -196,6 +207,7 @@
 		width: 80px;
 		height: 75px;
 	}
+
 	.drag-button,
 	.close-button {
 		background: var(--color-surface-600);
@@ -210,14 +222,18 @@
 		position: absolute;
 		cursor: pointer;
 	}
+
+	/* Pro drag tlačítko je také vhodné nastavit touch-action: none */
 	.drag-button {
 		top: 0;
 		left: 0;
+		touch-action: none;
 	}
 	.close-button {
 		top: 30px;
 		right: 0;
 	}
+
 	:global(.simple-keyboard .hg-button) {
 		height: 40px;
 		margin: 2px;
