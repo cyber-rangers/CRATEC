@@ -7,9 +7,8 @@
 	import DiskSelectModal from '$lib/components/modals/DiskSelectModal.svelte';
 	import { Slider } from '@skeletonlabs/skeleton-svelte';
 	import { writable, type Writable } from 'svelte/store';
-	import type { EwfParams } from '$lib/stores/copyRunStore';
+	import type { EwfParams, DdParams } from '$lib/stores/copyRunStore';
 
-	// Definice výchozího stavu copyRunStore – aby se resetoval při načtení stránky
 	const defaultCopyRunState = {
 		inputDisk: null,
 		outputDisks: [],
@@ -26,11 +25,13 @@
 			case_number: '',
 			description: '',
 			investigator_name: '',
-			evidence_number: ''
+			evidence_number: '',
+			notes: '',
+			limit: [0],
+			offset: [0]
 		}
 	};
 
-	// Defaultní kroky (pro DD, pokud nejsou dynamické)
 	const defaultSteps = [
 		{ label: 'Step 1', description: 'The description of step 1.' },
 		{ label: 'Step 2', description: 'The description of step 2.' },
@@ -39,50 +40,41 @@
 		{ label: 'Step 5', description: 'The description of step 5.' }
 	];
 
-	type EwfParamsKeys = keyof EwfParams;
-	// => 'case_number' | 'description' | 'investigator_name' | 'evidence_number' | 'notes' | 'bytes_to_read'
-
+	type ParamKeys = keyof EwfParams | keyof DdParams;
 	interface StepDefinition {
 		label: string;
 		description: string;
-		field?: EwfParamsKeys; // nepovinné, protože diskSelection krok žádný field nepotřebuje
+		field?: ParamKeys;
 		notesStep?: boolean;
 		bytesStep?: boolean;
-		rangeStep?: boolean;
 		offsetStep?: boolean;
-		// cokoliv dalšího
+		rangeStep?: boolean;
 	}
 
 	let DiskSelectModalOpen = false;
 	let modalSide: 'input' | 'output' = 'input';
 	let tabSet: number = 0;
-	// Přepínač: 0 = ewfacquire, 1 = DD
 	let value: number = 0;
-	// Konfigurace získané z DB – objekt obsahující pole dd a ewf
 	let configs: any = { dd: [], ewf: [] };
+	let configSelected = false;
+	let selectedConfig: any = null;
+	let currentStep = 0;
 
 	async function loadConfigs() {
 		try {
 			configs = await invoke('get_all_active_configs');
-			console.log('Loaded configs:', configs);
 		} catch (error) {
 			console.error('Error fetching configs:', error);
 		}
 	}
 
-	// Při načtení stránky resetujeme copyRunStore, aby nebyly uloženy staré hodnoty
 	onMount(async () => {
 		copyRunStore.set(defaultCopyRunState);
 		await loadConfigs();
 	});
 
-	// Stav výběru konfigurace
-	let configSelected = false;
-	let selectedConfig: any = null;
-
 	function selectConfig(config: any) {
 		selectedConfig = config;
-		// Pokud má konfigurace atribut ewf_format, jedná se o ewfacquire, jinak DD
 		value = config.ewf_format ? 0 : 1;
 		configSelected = true;
 		currentStep = 0;
@@ -90,66 +82,94 @@
 
 	$: maxBytes = (() => {
 		const st = $copyRunStore;
-		if (!st.inputDisk?.sector_count || !st.inputDisk?.sector_size) return 100;
-		return st.inputDisk.sector_count * st.inputDisk.sector_size;
+		return st.inputDisk?.sector_count && st.inputDisk?.sector_size
+			? st.inputDisk.sector_count * st.inputDisk.sector_size
+			: 100;
 	})();
 
-	let stepsToUse: StepDefinition[] = [];
-
-	// Správa kroků
-	let currentStep = 0;
-	$: dynamicSteps =
-		configSelected && value === 0 && selectedConfig
-			? ([
-					{ label: 'Disk Selection', description: 'Vyberte disky' },
-					{ label: 'Case Number', description: 'Zadejte číslo případu', field: 'case_number' },
-					{ label: 'Description', description: 'Zadejte popis', field: 'description' },
-					{
-						label: 'Investigator Name',
-						description: 'Zadejte jméno vyšetřovatele',
-						field: 'investigator_name'
-					},
-					{
-						label: 'Evidence Number',
-						description: 'Zadejte číslo důkazu',
-						field: 'evidence_number'
-					},
-					...(selectedConfig.notes === 'ask'
-						? [{ label: 'Notes', description: 'Zadejte poznámky', field: 'notes', notesStep: true }]
-						: []),
-					...(selectedConfig.offset === 'ask' && selectedConfig.bytes_to_read === 'ask'
-						? [
-								{
-									label: 'Offset + Bytes to read',
-									description: 'Zadejte ofset a kolik bajtů číst',
-									rangeStep: true
-								}
-							]
-						: selectedConfig.offset === 'ask'
+	$: stepsToUse =
+		configSelected && selectedConfig
+			? value === 0
+				? [
+						{ label: 'Disk Selection', description: 'Vyberte disky' },
+						{ label: 'Case Number', description: 'Zadejte číslo případu', field: 'case_number' },
+						{ label: 'Description', description: 'Zadejte popis', field: 'description' },
+						{
+							label: 'Investigator',
+							description: 'Zadejte jméno vyšetřovatele',
+							field: 'investigator_name'
+						},
+						{
+							label: 'Evidence No.',
+							description: 'Zadejte číslo důkazu',
+							field: 'evidence_number'
+						},
+						...(selectedConfig.notes === 'ask'
 							? [
 									{
-										label: 'Offset (start position)',
-										description: 'Zadejte ofset (odkud začít číst)',
-										offsetStep: true
+										label: 'Notes',
+										description: 'Zadejte poznámky',
+										field: 'notes',
+										notesStep: true
 									}
 								]
-							: selectedConfig.bytes_to_read === 'ask'
-								? [
-										{
-											label: 'Bytes to read',
-											description: 'Kolik bajtů číst',
-											bytesStep: true
-										}
-									]
-								: [])
-				] as StepDefinition[])
-			: [];
+							: []),
+						...(selectedConfig.offset === 'ask' && selectedConfig.bytes_to_read === 'ask'
+							? [
+									{
+										label: 'Offset + Bytes',
+										description: 'Zadejte offset a kolik bajtů číst',
+										rangeStep: true
+									}
+								]
+							: selectedConfig.offset === 'ask'
+								? [{ label: 'Offset only', description: 'Zadejte offset', offsetStep: true }]
+								: selectedConfig.bytes_to_read === 'ask'
+									? [{ label: 'Bytes to read', description: 'Kolik bajtů číst', bytesStep: true }]
+									: [])
+					]
+				: [
+						{ label: 'Disk Selection', description: 'Vyberte disky' },
+						{ label: 'Case Number', description: 'Zadejte číslo případu', field: 'case_number' },
+						{ label: 'Description', description: 'Zadejte popis', field: 'description' },
+						{
+							label: 'Investigator',
+							description: 'Zadejte jméno vyšetřovatele',
+							field: 'investigator_name'
+						},
+						{
+							label: 'Evidence No.',
+							description: 'Zadejte číslo důkazu',
+							field: 'evidence_number'
+						},
+						...(selectedConfig.notes === 'ask'
+							? [
+									{
+										label: 'Notes',
+										description: 'Zadejte poznámky',
+										field: 'notes',
+										notesStep: true
+									}
+								]
+							: []),
+						...(selectedConfig.offset === 'ask' && selectedConfig.limit === 'ask'
+							? [
+									{
+										label: 'Offset + Limit',
+										description: 'Zadejte offset a limit',
+										rangeStep: true
+									}
+								]
+							: selectedConfig.offset === 'ask'
+								? [{ label: 'Offset only', description: 'Zadejte offset', offsetStep: true }]
+								: selectedConfig.limit === 'ask'
+									? [{ label: 'Limit only', description: 'Zadejte limit', bytesStep: true }]
+									: [])
+					]
+			: defaultSteps;
 
-	$: stepsToUse = configSelected && value === 0 && selectedConfig ? dynamicSteps : defaultSteps;
 	$: isFirstStep = currentStep === 0;
 	$: isLastStep = currentStep === stepsToUse.length - 1;
-
-	let bytes_slider: Writable<number[]> = writable<number[]>([0]);
 
 	function isCurrentStep(index: number) {
 		return currentStep === index;
@@ -161,12 +181,28 @@
 		if (currentStep > 0) currentStep--;
 	}
 
+	let processStarted = false;
+
+	function nextStep() {
+		if (!isLastStep) {
+			currentStep++;
+		} else {
+			// finální spuštění
+			if (!processStarted) {
+				processStarted = true;
+				console.log('Final copyRunStore:', $copyRunStore);
+				if (value === 0) runEwfAcquire();
+				else runDdAcquire();
+			}
+		}
+	}
+
+	// Spuštění EWF
 	async function runEwfAcquire() {
 		try {
 			const config_id = selectedConfig.id;
 			const input_interface = $copyRunStore.inputDisk?.interface || '';
-			// Vezmeme všechny výstupní disky (ne jen první):
-			const output_interfaces = $copyRunStore.outputDisks.map(d => d.interface);
+			const output_interfaces = $copyRunStore.outputDisks.map((d) => d.interface);
 
 			const {
 				case_number,
@@ -194,7 +230,6 @@
 				input_interface,
 				output_interfaces
 			});
-
 			await invoke('run_ewfacquire', {
 				config_id,
 				ewf_params,
@@ -206,36 +241,61 @@
 			console.error('Chyba při spouštění ewfacquire:', error);
 		}
 	}
-	let processStarted = false;
 
-	function nextStep() {
-		if (!isLastStep) {
-			currentStep++;
-		} else {
-			if (!processStarted) {
-				processStarted = true;
-				console.log('Final copyRunStore:', $copyRunStore);
-				runEwfAcquire();
-			}
+	// Spuštění DD
+	async function runDdAcquire() {
+		try {
+			const config_id = selectedConfig.id;
+			const input_interface = $copyRunStore.inputDisk?.interface || '';
+			const output_interfaces = $copyRunStore.outputDisks.map((d) => d.interface);
+
+			const { case_number, description, investigator_name, evidence_number, notes, offset, limit } =
+				$copyRunStore.ddParams;
+
+			const dd_params = {
+				case_number,
+				description,
+				investigator_name,
+				evidence_number,
+				notes,
+				offset: offset[0],
+				limit: limit[0]
+			};
+
+			console.log('Running DD acquire with:', {
+				config_id,
+				dd_params,
+				input_interface,
+				output_interfaces
+			});
+			await invoke('run_ddacquire', {
+				config_id,
+				dd_params,
+				input_interface,
+				output_interfaces
+			});
+			console.log('DD acquire completed.');
+		} catch (error) {
+			console.error('Error running ddacquire:', error);
 		}
 	}
 </script>
 
 {#if !configSelected}
-	<!-- Zobrazení pouze výběru konfigurací -->
+	<!-- Výběr konfigurace -->
 	<div class="conf-container space-y-2 text-center">
 		<div style="padding-bottom: 20px;">
 			<nav class="btn-group preset-outlined-surface-200-800 flex-col p-2 md:flex-row">
 				<button
 					type="button"
-					onclick={() => (value = 0)}
+					on:click={() => (value = 0)}
 					class="btn {value === 0 ? 'preset-filled' : 'hover:preset-tonal'}"
 				>
 					ewfacquire
 				</button>
 				<button
 					type="button"
-					onclick={() => (value = 1)}
+					on:click={() => (value = 1)}
 					class="btn {value === 1 ? 'preset-filled' : 'hover:preset-tonal'}"
 				>
 					DD
@@ -244,10 +304,11 @@
 		</div>
 		<section class="mx-auto grid w-5/6 grid-cols-2 gap-4 md:grid-cols-4">
 			{#if value === 0}
+				<!-- EWF configy -->
 				{#each configs.ewf as config (config.id)}
 					<div class="grid-box">
 						<div class="variant-ringed-primary"></div>
-						<button class="centered-container" onclick={() => selectConfig(config)}>
+						<button class="centered-container" on:click={() => selectConfig(config)}>
 							<p class="name">{config.confname}</p>
 							<p class="text">ID: {config.id}</p>
 							<p class="title">Formát</p>
@@ -256,10 +317,11 @@
 					</div>
 				{/each}
 			{:else if value === 1}
+				<!-- DD configy -->
 				{#each configs.dd as config (config.id)}
 					<div class="grid-box">
 						<div class="variant-ringed-primary"></div>
-						<button class="centered-container" onclick={() => selectConfig(config)}>
+						<button class="centered-container" on:click={() => selectConfig(config)}>
 							<p class="name">{config.confname}</p>
 							<p class="text">ID: {config.id}</p>
 							<p class="title">Block size</p>
@@ -271,7 +333,7 @@
 		</section>
 	</div>
 {:else}
-	<!-- Zobrazení stepperu a jednotlivých kroků -->
+	<!-- Stepper -->
 	<div class="w-full">
 		<div class="space-y-8">
 			<div class="relative">
@@ -281,7 +343,7 @@
 							class="btn-icon btn-icon-sm rounded-full {isCurrentStep(i)
 								? 'preset-filled-primary-500'
 								: 'preset-filled-surface-200-800'}"
-							onclick={() => setStep(i)}
+							on:click={() => setStep(i)}
 							title={step.label}
 						>
 							<span class="font-bold">{i + 1}</span>
@@ -290,11 +352,12 @@
 				</div>
 				<hr class="hr !border-surface-200-800 absolute top-[50%] right-0 left-0 z-[-1]" />
 			</div>
+
+			<!-- Obsah jednotlivých kroků -->
 			{#if currentStep === 0}
-				<!-- Krok 0: Výběr disků -->
+				<!-- Výběr disků -->
 				<div class="card bg-surface-700-900 space-y-2 p-10 text-center" style="height: 373px;">
 					<div class="container">
-						<!-- Levá sekce (VSTUP) -->
 						<div class="section left">
 							<div class="header">VSTUP</div>
 							<div class="content">
@@ -302,17 +365,17 @@
 									<button
 										class="box"
 										type="button"
-										onclick={() => {
+										on:click={() => {
 											modalSide = 'input';
 											DiskSelectModalOpen = true;
 										}}
 									>
 										{#if $copyRunStore.inputDisk.type === 'usb'}
-											<div class="connected-icon" style="width: 40px;">
+											<div style="width: 40px;">
 												<Usb />
 											</div>
 										{:else}
-											<div class="connected-icon" style="width: 40px;">
+											<div style="width: 40px;">
 												<HardDrive />
 											</div>
 										{/if}
@@ -322,7 +385,7 @@
 									<button
 										class="box"
 										type="button"
-										onclick={() => {
+										on:click={() => {
 											modalSide = 'input';
 											DiskSelectModalOpen = true;
 										}}
@@ -332,7 +395,6 @@
 								{/if}
 							</div>
 						</div>
-						<!-- Střední sekce (animovaná šipka) -->
 						<div class="section center">
 							<div class="content">
 								<div class="arrow">
@@ -342,7 +404,6 @@
 								</div>
 							</div>
 						</div>
-						<!-- Pravá sekce (VÝSTUP) -->
 						<div class="section right">
 							<div class="header">VÝSTUP</div>
 							<div class="content">
@@ -350,11 +411,11 @@
 									{#each $copyRunStore.outputDisks as disk (disk.interface)}
 										<div class="output-item">
 											{#if disk.type === 'usb'}
-												<div class="connected-icon" style="width: 40px;">
+												<div style="width: 40px;">
 													<Usb />
 												</div>
 											{:else}
-												<div class="connected-icon" style="width: 40px;">
+												<div style="width: 40px;">
 													<HardDrive />
 												</div>
 											{/if}
@@ -365,7 +426,7 @@
 										<button
 											class="box small"
 											type="button"
-											onclick={() => {
+											on:click={() => {
 												modalSide = 'output';
 												DiskSelectModalOpen = true;
 											}}
@@ -379,101 +440,173 @@
 					</div>
 				</div>
 			{:else}
+				<!-- Ostatní kroky -->
 				<div class="card bg-surface-700-900 space-y-2 p-10 text-center" style="height: 373px;">
 					<h2 class="text-xl font-bold">{stepsToUse[currentStep].label}</h2>
 					<p>{stepsToUse[currentStep].description}</p>
 
+					<!-- notesStep -->
 					{#if stepsToUse[currentStep].notesStep}
-						<!-- Zadání poznámek -->
-						<input
-							type="text"
-							bind:value={$copyRunStore.ewfParams[stepsToUse[currentStep].field as keyof EwfParams]}
-							class="input w-[400px] block mx-auto text-center border-2 border-primary-500"
-						/>
+						{#if value === 0}
+							<input
+								type="text"
+								class="input border-primary-500 mx-auto block w-[400px] border-2 text-center"
+								bind:value={$copyRunStore.ewfParams.notes}
+							/>
+						{:else}
+							<input
+								type="text"
+								class="input border-primary-500 mx-auto block w-[400px] border-2 text-center"
+								bind:value={$copyRunStore.ddParams.notes}
+							/>
+						{/if}
+
+						<!-- rangeStep => offset + bytes/limit, ale Skeleton Slider nepodporuje 2 handle => dva slidery -->
 					{:else if stepsToUse[currentStep].rangeStep}
-						<!-- Dva handly: [offset, offset + bytes_to_read] -->
-						<!-- V skeleton-svelte: `<Slider range={true} ... />` pro dvou-handlový posun. -->
-						<Slider
-							
-							value={[$copyRunStore.ewfParams.offset[0], $copyRunStore.ewfParams.bytes_to_read[0]]}
-							max={maxBytes}
-							onValueChange={(event) => {
-								const [offsetVal, bytesVal] = event.value;
-								copyRunStore.update((state) => ({
-									...state,
-									ewfParams: {
-										...state.ewfParams,
-										offset: [offsetVal],
-										bytes_to_read: [bytesVal]
-									}
-								}));
-							}}
-						/>
-						<p class="mt-2">
-							Offset: {$copyRunStore.ewfParams.offset} / Bytes: {$copyRunStore.ewfParams
-								.bytes_to_read}
-						</p>
+						{#if value === 0}
+							<!-- EWF: offset a bytes_to_read -->
+							<label>Offset</label>
+							<Slider
+								value={$copyRunStore.ewfParams.offset}
+								max={maxBytes}
+								onValueChange={(event) => {
+									copyRunStore.update((state) => {
+										state.ewfParams.offset = event.value;
+										return state;
+									});
+								}}
+							/>
+							<p class="mt-2">Offset: {$copyRunStore.ewfParams.offset}</p>
+
+							<label>Bytes to read</label>
+							<Slider
+								value={$copyRunStore.ewfParams.bytes_to_read}
+								max={maxBytes}
+								onValueChange={(event) => {
+									copyRunStore.update((state) => {
+										state.ewfParams.bytes_to_read = event.value;
+										return state;
+									});
+								}}
+							/>
+							<p class="mt-2">Bytes: {$copyRunStore.ewfParams.bytes_to_read}</p>
+						{:else}
+							<!-- DD: offset a limit -->
+							<label>Offset</label>
+							<Slider
+								value={$copyRunStore.ddParams.offset}
+								max={maxBytes}
+								onValueChange={(event) => {
+									copyRunStore.update((state) => {
+										state.ddParams.offset = event.value;
+										return state;
+									});
+								}}
+							/>
+							<p class="mt-2">Offset: {$copyRunStore.ddParams.offset}</p>
+
+							<label>Limit</label>
+							<Slider
+								value={$copyRunStore.ddParams.limit}
+								max={maxBytes}
+								onValueChange={(event) => {
+									copyRunStore.update((state) => {
+										state.ddParams.limit = event.value;
+										return state;
+									});
+								}}
+							/>
+							<p class="mt-2">Limit: {$copyRunStore.ddParams.limit}</p>
+						{/if}
+
+						<!-- offsetStep (jedno slider) -->
 					{:else if stepsToUse[currentStep].offsetStep}
-						<!-- Jedno-handlový slider, posun je offset. Vzorek s dir="rtl". -->
-						<Slider
-							dir="rtl"
-							value={$copyRunStore.ewfParams.offset}
-							max={maxBytes}
-							onValueChange={(event) => {
-								copyRunStore.update((state) => ({
-									...state,
-									ewfParams: {
-										...state.ewfParams,
-										offset: event.value
-									}
-								}));
-							}}
-						/>
-						<p class="mt-2">Offset: {$copyRunStore.ewfParams.offset}</p>
+						{#if value === 0}
+							<Slider
+								dir="rtl"
+								value={$copyRunStore.ewfParams.offset}
+								max={maxBytes}
+								onValueChange={(event) => {
+									copyRunStore.update((state) => {
+										state.ewfParams.offset = event.value;
+										return state;
+									});
+								}}
+							/>
+							<p class="mt-2">Offset: {$copyRunStore.ewfParams.offset}</p>
+						{:else}
+							<Slider
+								dir="rtl"
+								value={$copyRunStore.ddParams.offset}
+								max={maxBytes}
+								onValueChange={(event) => {
+									copyRunStore.update((state) => {
+										state.ddParams.offset = event.value;
+										return state;
+									});
+								}}
+							/>
+							<p class="mt-2">Offset: {$copyRunStore.ddParams.offset}</p>
+						{/if}
+
+						<!-- bytesStep (u EWF) / limitStep (u DD) -->
 					{:else if stepsToUse[currentStep].bytesStep}
-						<!-- Stávající jednodeskový slider pro bytes_to_read -->
-						<Slider
-							value={$copyRunStore.ewfParams.bytes_to_read}
-							max={maxBytes}
-							markers={[25, 50, 75]}
-							onValueChange={(event) => {
-								copyRunStore.update((state) => {
-									return {
-										...state,
-										ewfParams: {
-											...state.ewfParams,
-											bytes_to_read: event.value
-										}
-									};
-								});
-							}}
-						/>
-						<p class="mt-2">Zvoleno bajtů: {$copyRunStore.ewfParams.bytes_to_read}</p>
+						{#if value === 0}
+							<!-- EWF: bytes_to_read -->
+							<Slider
+								value={$copyRunStore.ewfParams.bytes_to_read}
+								max={maxBytes}
+								onValueChange={(event) => {
+									copyRunStore.update((state) => {
+										state.ewfParams.bytes_to_read = event.value;
+										return state;
+									});
+								}}
+							/>
+							<p class="mt-2">Bytes: {$copyRunStore.ewfParams.bytes_to_read}</p>
+						{:else}
+							<!-- DD: limit -->
+							<Slider
+								value={$copyRunStore.ddParams.limit}
+								max={maxBytes}
+								onValueChange={(event) => {
+									copyRunStore.update((state) => {
+										state.ddParams.limit = event.value;
+										return state;
+									});
+								}}
+							/>
+							<p class="mt-2">Limit: {$copyRunStore.ddParams.limit}</p>
+						{/if}
+
+						<!-- Obecný field (case_number, description, investigator_name, evidence_number apod.) -->
 					{:else if stepsToUse[currentStep].field}
-						<!-- Obecné textové pole pro "case_number", "description", "investigator_name", "evidence_number" atd. -->
-						<input
-							type="text"
-							bind:value={$copyRunStore.ewfParams[stepsToUse[currentStep].field as keyof EwfParams]}
-							class="input w-[400px] block mx-auto text-center border-2 border-primary-500"
-						/>
+						<!-- Ověříme, že field exis+tuje -->
+						{#if value === 0}
+							<input
+								type="text"
+								class="input border-primary-500 mx-auto block w-[400px] border-2 text-center"
+								bind:value={
+									$copyRunStore.ewfParams[stepsToUse[currentStep].field as keyof EwfParams]
+								}
+							/>
+						{:else}
+							<input
+								type="text"
+								class="input border-primary-500 mx-auto block w-[400px] border-2 text-center"
+								bind:value={$copyRunStore.ddParams[stepsToUse[currentStep].field as keyof DdParams]}
+							/>
+						{/if}
 					{/if}
 				</div>
 			{/if}
+
+			<!-- Navigační tlačítka kroků -->
 			<nav class="flex items-center justify-between gap-4">
-				<button
-					type="button"
-					class="btn bg-surface-800"
-					onclick={prevStep}
-					disabled={isFirstStep}
-				>
+				<button type="button" class="btn bg-surface-800" on:click={prevStep} disabled={isFirstStep}>
 					<span>Předchozí</span>
 				</button>
-				<button
-					type="button"
-					class="btn bg-surface-800"
-					onclick={nextStep}
-					disabled={isLastStep && false}
-				>
+				<button type="button" class="btn bg-surface-800" on:click={nextStep}>
 					<span>{isLastStep ? 'Dokončit' : 'Další'}</span>
 				</button>
 			</nav>
@@ -484,7 +617,7 @@
 <DiskSelectModal bind:openState={DiskSelectModalOpen} side={modalSide} />
 
 <style lang="postcss">
-	/* Stylování zůstává stejné, viz původní kód */
+	/* Ponecháváme vaše původní styly: */
 	.container {
 		display: flex;
 		width: 100%;
@@ -680,11 +813,9 @@
 		text-align: center;
 		padding: 2rem;
 	}
-	/* Přizpůsobte kartu, aby měla maximálně výšku viewportu minus nějaké odsazení, 
-   a současně nastavte overflow na hidden, aby se scroll neobjevil */
 	.card {
 		height: auto;
-		max-height: 100vh; /* odečtete potřebné odsazení */
+		max-height: 100vh;
 		overflow: hidden;
 	}
 </style>
