@@ -57,12 +57,8 @@
                         <td>{config?.limit_mode || 'Není k dispozici'}</td>
                     </tr>
                     <tr>
-                        <td><strong>Seek</strong></td>
-                        <td>{config?.seek !== undefined ? config.seek : 'Není k dispozici'}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Skip</strong></td>
-                        <td>{config?.skip !== undefined ? config.skip : 'Není k dispozici'}</td>
+                        <td><strong>Offset</strong></td>
+                        <td>{config?.offset !== undefined ? config.offset : 'Není k dispozici'}</td>
                     </tr>
                     <tr>
                         <td><strong>Hash typy</strong></td>
@@ -71,13 +67,21 @@
                     <tr>
                         <td><strong>Hash window</strong></td>
                         <td>
-                            {config?.hashwindow_value ? config.hashwindow_value : 'N/A'} {config?.hashwindow_unit || ''}
+                            {#if config?.hashwindow && config.hashwindow.toLowerCase() === 'whole'}
+                                celý disk
+                            {:else}
+                                {config?.hashwindow || 'N/A'}
+                            {/if}
                         </td>
                     </tr>
                     <tr>
                         <td><strong>Rozdělení</strong></td>
                         <td>
-                            {config?.split_value ? config.split_value : 'N/A'} {config?.split_unit || ''}
+                            {#if config?.split && config.split.toLowerCase() === 'whole'}
+                                celý disk
+                            {:else}
+                                {config?.split || 'N/A'}
+                            {/if}
                         </td>
                     </tr>
                     <tr>
@@ -96,6 +100,7 @@
                         <td><strong>ID</strong></td>
                         <td>{config?.id || 'Není k dispozici'}</td>
                     </tr>
+                   
                 </tbody>
             </table>
 

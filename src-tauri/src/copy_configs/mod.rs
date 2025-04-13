@@ -150,21 +150,18 @@ pub async fn save_new_ewf_config(
     Ok(())
 }
 
-/// **Struktura pro vkládání nové DCFLDD konfigurace (bez ID)**
+/// **Upravená struktura pro vkládání nové DCFLDD konfigurace**
 #[derive(Debug, serde::Serialize)]
 pub struct NewDDConfig {
     pub confname: String,
     pub format: String,
     pub limit_mode: String,
-    pub seek: i32,
-    pub skip: i32,
-    pub hash_types: String, // joined hash algorithms (comma-separated)
-    pub hashwindow_value: i32,
-    pub hashwindow_unit: String,
-    pub split_value: String,
-    pub split_unit: String,
-    pub vf: i32,    // 1 for on, 0 for off
-    pub diffwr: i32, // 1 for on, 0 for off
+    pub offset: String, // TEXT místo i32
+    pub hash_types: String,
+    pub hashwindow: String,
+    pub split: String,
+    pub vf: i32,
+    pub diffwr: i32,
     pub notes: String,
 }
 
@@ -174,13 +171,10 @@ pub fn save_dd_config(conn: &Connection, config: NewDDConfig) -> Result<()> {
         &config.confname,
         &config.format,
         &config.limit_mode,
-        &config.seek,
-        &config.skip,
+        &config.offset,
         &config.hash_types,
-        &config.hashwindow_value,
-        &config.hashwindow_unit,
-        &config.split_value,
-        &config.split_unit,
+        &config.hashwindow,
+        &config.split,
         &config.vf,
         &config.diffwr,
         &config.notes,
@@ -190,30 +184,26 @@ pub fn save_dd_config(conn: &Connection, config: NewDDConfig) -> Result<()> {
             confname,
             format,
             limit_mode,
-            seek,
-            skip,
+            offset,
             hash_types,
-            hashwindow_value,
-            hashwindow_unit,
-            split_value,
-            split_unit,
+            hashwindow,
+            split,
             vf,
             diffwr,
             notes
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"#,
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"#,
         params.as_slice(),
     )?;
     Ok(())
 }
 
-/// **Asynchroní Tauri command pro uložení nové DCFLDD konfigurace**
+/// **Asynchronní Tauri command pro uložení nové DCFLDD konfigurace**
 #[tauri::command(rename_all = "snake_case")]
 pub async fn save_new_dd_config(
     confname: String,
     format: String,
-    limit_mode: String, // changed here to match the schema
-    seek: String,
-    skip: String,
+    limit_mode: String,
+    offset: String, // akceptuje i "ask"
     hash_types: Vec<String>,
     hashwindow_value: String,
     hashwindow_unit: String,
@@ -223,42 +213,42 @@ pub async fn save_new_dd_config(
     diffwr: String,
     notes: String,
 ) -> Result<(), String> {
-    // Obtain the database connection (using your DB_CONN lock)
-    let conn = crate::db::DB_CONN.lock().await;
-
-    // Parse numerical values and convert boolean-like strings
-    let seek_parsed = seek.parse::<i32>().map_err(|e| format!("Invalid seek: {}", e))?;
-    let skip_parsed = skip.parse::<i32>().map_err(|e| format!("Invalid skip: {}", e))?;
-    let hashwindow_value_parsed = hashwindow_value.parse::<i32>()
-        .map_err(|e| format!("Invalid hashwindow_value: {}", e))?;
-
-    // Convert vf and diffwr: assume "on" means 1, otherwise 0.
     let vf_parsed = if vf == "on" { 1 } else { 0 };
     let diffwr_parsed = if diffwr == "on" { 1 } else { 0 };
+
+    let hashwindow = if hashwindow_value.to_lowercase() == "whole" {
+        "whole".to_string()
+    } else {
+        format!("{}{}", hashwindow_value, hashwindow_unit)
+    };
+
+    let split = if split_value.to_lowercase() == "whole" {
+        "whole".to_string()
+    } else {
+        format!("{}{}", split_value, split_unit)
+    };
 
     let config = NewDDConfig {
         confname,
         format,
-        limit_mode, // now a required parameter
-        seek: seek_parsed,
-        skip: skip_parsed,
+        limit_mode,
+        offset, // uloží se jako TEXT
         hash_types: hash_types.join(","),
-        hashwindow_value: hashwindow_value_parsed,
-        hashwindow_unit,
-        split_value,
-        split_unit,
+        hashwindow,
+        split,
         vf: vf_parsed,
         diffwr: diffwr_parsed,
         notes,
     };
 
+    let db_conn = crate::db::DB_CONN.clone();
+    let conn = db_conn.lock().await;
     save_dd_config(&conn, config)
-        .map_err(|e| format!("Error saving config: {}", e))?;
-
+        .map_err(|e| format!("Error saving config: {e}"))?;
     Ok(())
 }
 
-/// Upravená struktura pro načítání DD konfigurace z databáze (s ID)
+/// **Upravená struktura pro načítání DD konfigurace z databáze (s ID)**
 #[derive(Debug, serde::Serialize)]
 pub struct StoredDDConfig {
     pub id: i32,
@@ -267,13 +257,10 @@ pub struct StoredDDConfig {
     pub confname: String,
     pub format: String,
     pub limit_mode: String,
-    pub seek: i32,
-    pub skip: i32,
+    pub offset: String, // místo seek/skip
     pub hash_types: String,
-    pub hashwindow_value: i32,
-    pub hashwindow_unit: String,
-    pub split_value: String,
-    pub split_unit: String,
+    pub hashwindow: String,
+    pub split: String,
     pub vf: bool,
     pub diffwr: bool,
     pub notes: String,
@@ -350,18 +337,15 @@ pub fn get_all_configs(conn: &Connection) -> Result<CombinedConfigs> {
             confname,
             format,
             limit_mode,
-            seek,
-            skip,
+            offset,
             hash_types,
-            hashwindow_value,
-            hashwindow_unit,
-            split_value,
-            split_unit,
+            hashwindow,
+            split,
             vf,
             diffwr,
             notes
          FROM dd_config
-         WHERE active = true"#,
+         WHERE active = true"#, // odstraněno seek, skip
     )?;
     let dd_iter = stmt_dd.query_map([], |row| {
         Ok(StoredDDConfig {
@@ -371,16 +355,13 @@ pub fn get_all_configs(conn: &Connection) -> Result<CombinedConfigs> {
             confname: row.get(3)?,
             format: row.get(4)?,
             limit_mode: row.get(5)?,
-            seek: row.get(6)?,
-            skip: row.get(7)?,
-            hash_types: row.get(8)?,
-            hashwindow_value: row.get(9)?,
-            hashwindow_unit: row.get(10)?,
-            split_value: row.get(11)?,
-            split_unit: row.get(12)?,
-            vf: row.get(13)?,
-            diffwr: row.get(14)?,
-            notes: row.get(15)?,
+            offset: row.get(6)?, // místo seek, skip
+            hash_types: row.get(7)?,
+            hashwindow: row.get(8)?,
+            split: row.get(9)?,
+            vf: row.get(10)?,
+            diffwr: row.get(11)?,
+            notes: row.get(12)?,
         })
     })?;
     let mut dd_configs = Vec::new();

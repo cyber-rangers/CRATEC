@@ -11,15 +11,10 @@ pub fn initialize_dd_config_scheme(conn: &Connection) -> Result<()> {
                 CHECK(format IN ('auto','512','1024','2048')),
             limit_mode TEXT NOT NULL DEFAULT 'whole'
                 CHECK(limit_mode IN ('whole','ask')),
-            seek INTEGER NOT NULL DEFAULT 0,
-            skip INTEGER NOT NULL DEFAULT 0,
+            offset TEXT NOT NULL DEFAULT '0',
             hash_types TEXT NOT NULL DEFAULT 'md5',
-            hashwindow_value INTEGER NOT NULL DEFAULT 1,
-            hashwindow_unit TEXT NOT NULL DEFAULT 'MB'
-                CHECK(hashwindow_unit IN ('MB','GB')),
-            split_value TEXT NOT NULL DEFAULT 'whole',
-            split_unit TEXT NOT NULL DEFAULT 'MB'
-                CHECK(split_unit IN ('MB','GB')),
+            hashwindow TEXT NOT NULL DEFAULT '1MB',
+            split TEXT NOT NULL DEFAULT 'whole',
             vf BOOLEAN NOT NULL DEFAULT 0
                 CHECK(vf IN (0,1)),
             diffwr BOOLEAN NOT NULL DEFAULT 0

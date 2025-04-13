@@ -16,6 +16,9 @@ export interface DdParams {
 	description: string;
 	investigator_name: string;
 	evidence_number: string;
+	notes:string;
+	limit:number[];
+	offset:number[];
 }
 
 export interface CopyRunState {
@@ -41,6 +44,9 @@ export const copyRunStore = writable<CopyRunState>({
 		case_number: '',
 		description: '',
 		investigator_name: '',
-		evidence_number: ''
+		evidence_number: '',
+		notes: '',
+		limit: [0],
+		offset: [0]
 	}
 });

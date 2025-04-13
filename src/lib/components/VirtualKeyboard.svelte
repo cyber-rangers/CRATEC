@@ -6,7 +6,8 @@
 
 	export let showKeyboard: boolean;
 	export let activeInput: string;
-	export let formData: Record<string, string | string[]>;
+	
+	export let formData: Record<string, string | boolean | string[]>;
 
 	let keyboardContainer: HTMLDivElement;
 	let keyboard: SimpleKeyboard | null = null;
@@ -102,10 +103,10 @@
 				physicalKeyboardHighlight: true,
 				theme: 'hg-theme-default cratec-theme',
 
-				// DŮLEŽITÉ: vynutíme zpracování dotykových i myš událostí
-				useTouchEvents: true,
-				useMouseEvents: true,
-
+				
+				//useTouchEvents: true,
+				//useMouseEvents: true,
+				autoUseTouchEvents: true,
 				layout: {
 					default: [
 						'ě š č ř ž ý á í é -',
@@ -176,7 +177,7 @@
 					on:pointerdown={onDragStart}
 					on:touchstart={onDragStart}
 				>
-					⇕
+					 ⇕
 				</button>
 				<!-- Tlačítko pro zavření klávesnice -->
 				<button class="close-button btn preset-filled" on:click={closeKeyboard}>✖</button>

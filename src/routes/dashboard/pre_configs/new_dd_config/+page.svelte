@@ -10,13 +10,12 @@
         confname: string;
         format: string;
         limit_mode: string;
-        seek: string;
-        skip: string;
+        offset: string; // místo seek + skip
         hash_types: string[];
-        hashwindow_value: string;
-        hashwindow_unit: string;
-        split_value: string;
-        split_unit: string;
+        hashwindow_value: string; 
+        hashwindow_unit: string;  
+        split_value: string;      
+        split_unit: string;       
         vf: string;
         diffwr: string;
         notes: string;
@@ -26,11 +25,10 @@
         confname: '',
         format: 'auto',
         limit_mode: 'whole',
-        seek: '0',
-        skip: '0',
+        offset: '0',
         hash_types: ['md5'],
-        hashwindow_value: '1',
-        hashwindow_unit: 'MB',
+        hashwindow_value: '5',
+        hashwindow_unit: 'GB',
         split_value: '',
         split_unit: 'MB',
         vf: 'off',
@@ -42,7 +40,6 @@
     let formatPopover = false;
     let limitPopover = false;
     let seekPopover = false;
-    let skipPopover = false;
     let hashPopover = false;
     let hashWindowPopover = false;
     let splitPopover = false;
@@ -103,10 +100,8 @@
                 return 'Velikost bloku (auto, 512, 1024 nebo 2048).';
             case 'limit_mode':
                 return 'Určuje, zda číst celý disk nebo zobrazit dotaz.';
-            case 'seek':
-                return 'Nastavení offsetu výstupu.';
-            case 'skip':
-                return 'Nastavení offsetu vstupu.';
+            case 'offset':
+                return 'Vstupní i výstupní offset (nahrazuje původní seek/skip).';
             case 'hash_types':
                 return 'Seznam hashovacích algoritmů (lze vybrat více).';
             case 'hash_window':
@@ -142,7 +137,6 @@
         formatPopover = false;
         limitPopover = false;
         seekPopover = false;
-        skipPopover = false;
         hashPopover = false;
         hashWindowPopover = false;
         splitPopover = false;
@@ -169,10 +163,39 @@
 
     async function onFormSubmit(): Promise<void> {
         try {
-            if (isWholeSplit()) {
+            if (!formData.hashwindow_value.trim()) {
+                formData.hashwindow_value = 'whole';
+            }
+            if (!formData.split_value.trim()) {
                 formData.split_value = 'whole';
             }
-            await invoke('save_new_dd_config', { ...formData });
+
+            const hashwindow = formData.hashwindow_value.toLowerCase() === 'whole'
+                ? 'whole'
+                : `${formData.hashwindow_value}${formData.hashwindow_unit}`;
+
+            const split = formData.split_value.toLowerCase() === 'whole'
+                ? 'whole'
+                : `${formData.split_value}${formData.split_unit}`;
+
+            const vf_parsed = formData.vf === 'on' ? 1 : 0;
+            const diffwr_parsed = formData.diffwr === 'on' ? 1 : 0;
+
+            await invoke('save_new_dd_config', {
+                confname: formData.confname,
+                format: formData.format,
+                limit_mode: formData.limit_mode,
+                offset: formData.offset, // jediné pole nahrazující seek/skip
+                hash_types: formData.hash_types,
+                hashwindow_value: formData.hashwindow_value,
+                hashwindow_unit: formData.hashwindow_unit,
+                split_value: formData.split_value,
+                split_unit: formData.split_unit,
+                vf: formData.vf,
+                diffwr: formData.diffwr,
+                notes: formData.notes
+            });
+
             goto('/dashboard/pre_configs');
         } catch (error) {
             console.error('Chyba při ukládání:', error);
@@ -296,10 +319,10 @@
             />
         </label>
 
-        <!-- Seek offset -->
+        <!-- Offset (sjednocené) -->
         <label class="label">
             <div class="flex items-center gap-2">
-                <span>Seek offset (výstup)</span>
+                <span>Offset</span>
                 <Popover
                     open={seekPopover}
                     onOpenChange={(e) => (seekPopover = e.open)}
@@ -319,53 +342,16 @@
                                 <X />
                             </button>
                         </div>
-                        {getExplanation('seek')}
+                        Vstupní i výstupní offset (nahrazuje původní seek/skip).
                     {/snippet}
                 </Popover>
             </div>
             <Combobox
                 multiple={false}
                 data={offsetOptions}
-                defaultValue={[formData.seek]}
-                value={[formData.seek]}
-                onValueChange={(e) => (formData.seek = e.value[0])}
-                placeholder="Vyberte..."
-            />
-        </label>
-
-        <!-- Skip offset -->
-        <label class="label">
-            <div class="flex items-center gap-2">
-                <span>Skip offset (vstup)</span>
-                <Popover
-                    open={skipPopover}
-                    onOpenChange={(e) => (skipPopover = e.open)}
-                    triggerBase="btn-icon preset-tonal"
-                    contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
-                    arrow
-                    arrowBackground="!bg-surface-200 dark:!bg-surface-800"
-                    zIndex="999"
-                >
-                    {#snippet trigger()}
-                        <Info />
-                    {/snippet}
-                    {#snippet content()}
-                        <div class="flex justify-between items-center mb-2">
-                            <h2 class="text-lg font-bold">Info</h2>
-                            <button class="btn-icon" on:click={() => (skipPopover = false)}>
-                                <X />
-                            </button>
-                        </div>
-                        {getExplanation('skip')}
-                    {/snippet}
-                </Popover>
-            </div>
-            <Combobox
-                multiple={false}
-                data={offsetOptions}
-                defaultValue={[formData.skip]}
-                value={[formData.skip]}
-                onValueChange={(e) => (formData.skip = e.value[0])}
+                defaultValue={[formData.offset]}
+                value={[formData.offset]}
+                onValueChange={(e) => (formData.offset = e.value[0])}
                 placeholder="Vyberte..."
             />
         </label>
