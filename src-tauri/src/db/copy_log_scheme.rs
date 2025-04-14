@@ -23,7 +23,8 @@ pub fn initialize_copy_log_scheme(conn: &Connection) -> Result<()> {
             status TEXT NOT NULL DEFAULT 'running'
                 CHECK(status IN ('running','done','error')),
             source_disk_id INTEGER,
-            dest_disk_id TEXT,
+            dest_disk_id TEXT NOT NULL,
+            second_dest_disk_id TEXT,
             md5_hash TEXT DEFAULT NULL, 
             sha1_hash TEXT DEFAULT NULL,
             sha256_hash TEXT DEFAULT NULL,
@@ -48,7 +49,8 @@ pub fn initialize_copy_log_scheme(conn: &Connection) -> Result<()> {
             status TEXT NOT NULL DEFAULT 'running'
                 CHECK(status IN ('running','done','error')),
             source_disk_id INTEGER,
-            dest_disk_id TEXT,
+            dest_disk_id TEXT NOT NULL,
+            second_dest_disk_id TEXT,
             limit_value TEXT,
             offset TEXT DEFAULT NULL,
             md5_hash TEXT DEFAULT NULL, 

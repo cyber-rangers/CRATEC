@@ -8,6 +8,7 @@ use std::thread;
 
 /// Spustí příkaz `sudo lsblk -J -O -b <device>` a vrátí výsledný JSON.
 fn get_lsblk_json(device: &str) -> Result<Value, String> {
+    println!("[DEBUG] Spouštím lsblk pro device: {}", device);
     let output = Command::new("sudo")
         .arg("lsblk")
         .arg("-J")
@@ -16,9 +17,13 @@ fn get_lsblk_json(device: &str) -> Result<Value, String> {
         .arg(device)
         .output()
         .map_err(|e| format!("Failed to run lsblk: {}", e))?;
-
+    
+    println!("[DEBUG] lsblk příkaz skončil, status: {:?}", output.status);
+    println!("[DEBUG] lsblk raw output: {}", String::from_utf8_lossy(&output.stdout));
+    
     let json: Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| format!("Failed to parse lsblk JSON: {}", e))?;
+    println!("[DEBUG] Parsovaný JSON z lsblk: {:#?}", json);
     Ok(json)
 }
 
@@ -55,29 +60,43 @@ pub fn get_total_blocks(device: &str) -> Result<u64, String> {
 
 /// Vrátí mountpoint hlavního zařízení nebo některého z jeho oddílů z lsblk JSON (pokud existuje).
 pub fn get_mountpoint_for_interface(device: &str) -> Option<String> {
-    let lsblk_data = get_lsblk_json(device).ok()?;
+    println!("[DEBUG] Hledám mountpoint pro device: {}", device);
+    let lsblk_data = match get_lsblk_json(device) {
+        Ok(data) => data,
+        Err(e) => {
+            println!("[DEBUG] Chyba při získávání lsblk JSON: {}", e);
+            return None;
+        }
+    };
     let devices = lsblk_data["blockdevices"].as_array()?;
     if devices.is_empty() {
+        println!("[DEBUG] Pole blockdevices je prázdné.");
         return None;
     }
-
     // Zkusíme zjistit mountpoint přímo u hlavního zařízení
     if let Some(mp) = devices[0]["mountpoint"].as_str() {
+        println!("[DEBUG] Mountpoint na hlavním zařízení: {}", mp);
         if !mp.is_empty() {
             return Some(mp.to_string());
         }
+    } else {
+        println!("[DEBUG] Pole mountpoint na hlavním zařízení není k dispozici.");
     }
     // Pokud není, projdeme oddíly ("children")
     if let Some(children) = devices[0]["children"].as_array() {
+        println!("[DEBUG] Nalezeno {} oddílů, prohledávám je...", children.len());
         for child in children {
             if let Some(mp) = child["mountpoint"].as_str() {
+                println!("[DEBUG] Oddíl má mountpoint: {}", mp);
                 if !mp.is_empty() {
                     return Some(mp.to_string());
                 }
             }
             if let Some(mps) = child["mountpoints"].as_array() {
+                println!("[DEBUG] Oddíl obsahuje mountpoints: {:?}", mps);
                 for m in mps {
                     if let Some(mp) = m.as_str() {
+                        println!("[DEBUG] nalezený mountpoint v mountpoints: {}", mp);
                         if !mp.is_empty() {
                             return Some(mp.to_string());
                         }
@@ -85,7 +104,10 @@ pub fn get_mountpoint_for_interface(device: &str) -> Option<String> {
                 }
             }
         }
+    } else {
+        println!("[DEBUG] Pole children není k dispozici.");
     }
+    println!("[DEBUG] Nebyl nalezen žádný mountpoint.");
     None
 }
 

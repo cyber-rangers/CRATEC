@@ -176,7 +176,7 @@ pub async fn run_ewfacquire(
     }
 
     // První disk - vytvoříme kopii hodnoty místo reference
-    let first_output = output_interfaces[0].clone();
+    let first_output = format!("/dev/disk/by-path/{}", output_interfaces[0]);
     let actual_output_mount = match get_mountpoint_for_interface(&first_output) {
         Some(m) => m,
         None => {
@@ -191,12 +191,12 @@ pub async fn run_ewfacquire(
 
     // Druhý disk - zpracujeme pouze pokud existuje
     let second_output_mount = if output_interfaces.len() > 1 {
-        let second_output = output_interfaces[1].clone(); // Také klonujeme
+        let second_output = format!("/dev/disk/by-path/{}", output_interfaces[1]);
         match get_mountpoint_for_interface(&second_output) {
             Some(m) => Some(m),
             None => {
                 let err = format!(
-                    "(run_ewfacquire) Nepodařilo se najít mountpoint pro druhý disk: /dev/disk/by-path/{}",
+                    "(run_ewfacquire) Nepodařilo se najít mountpoint pro {}",
                     second_output
                 );
                 log_error(&err);
@@ -271,44 +271,55 @@ pub async fn run_ewfacquire(
                 .map_err(|e| format!("(DB) Chyba při získávání konfigurace: {}", e))?
             };
 
-            let insert_sql = format!(
+            // Vložíme nový záznam do copy_log_ewf pomocí parametrizovaného dotazu:
+            tx.execute(
                 "INSERT INTO copy_log_ewf (
-                    config_id, case_number, description, investigator_name, evidence_number,
-                    source_disk_id, dest_disk_id, notes, offset, bytes_to_read, start_datetime
-                ) VALUES ({}, '{}', '{}', '{}', '{}', '{}', '{}', '{}', {}, {}, DATETIME('now'))",
-                config_id,
-                ewf_params_db.case_number.replace("'", "''"),
-                ewf_params_db.description.replace("'", "''"),
-                ewf_params_db.investigator_name.replace("'", "''"),
-                ewf_params_db.evidence_number.replace("'", "''"),
-                input_interface.replace("'", "''"),
-                first_output.replace("'", "''"), // Stále ukládáme pouze první disk do DB
-                ewf_params_db.notes.replace("'", "''"),
-                ewf_params_db.offset,
-                ewf_params_db.bytes_to_read
-            );
+                     config_id, 
+                     case_number, 
+                     description, 
+                     investigator_name, 
+                     evidence_number,
+                     source_disk_id, 
+                     dest_disk_id, 
+                     second_dest_disk_id,
+                     notes, 
+                     offset, 
+                     bytes_to_read, 
+                     start_datetime
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, DATETIME('now'))",
+                params![
+                    config_id,
+                    ewf_params_db.case_number.replace("'", "''"),
+                    ewf_params_db.description.replace("'", "''"),
+                    ewf_params_db.investigator_name.replace("'", "''"),
+                    ewf_params_db.evidence_number.replace("'", "''"),
+                    input_interface.replace("'", "''"),
+                    first_output.replace("'", "''"),
+                    if output_interfaces.len() > 1 {
+                        output_interfaces[1].clone().replace("'", "''")
+                    } else {
+                        "".to_string()
+                    },
+                    ewf_params_db.notes.replace("'", "''"),
+                    ewf_params_db.offset,
+                    ewf_params_db.bytes_to_read
+                ],
+            ).map_err(|e| format!("(DB) Chyba při zápisu do copy_log_ewf: {}", e))?;
 
-            let copy_log_result = tx.execute_batch(&insert_sql);
-            if let Err(e) = &copy_log_result {
-                if e.to_string().contains("locked") || e.to_string().contains("busy") {
-                    thread::sleep(Duration::from_secs(5));
-                    tx.execute_batch(&insert_sql)
-                        .map_err(|e2| format!("(DB) Chyba při zápisu do copy_log_ewf: {}", e2))?;
-                } else {
-                    return Err(format!("(DB) Chyba při zápisu do copy_log_ewf: {}", e));
-                }
-            }
+            // Získáme nově vložené copy_log_ewf id
+            let copy_log_id = tx.last_insert_rowid();
 
+            // Vložíme záznam do copy_process, tentokrát použijeme copy_log_id jako triggered_by_ewf
             let process_result = tx.execute(
                 "INSERT INTO copy_process (triggered_by_ewf) VALUES (?1)",
-                [config_id],
+                params![copy_log_id],
             );
             if let Err(e) = &process_result {
                 if e.to_string().contains("locked") || e.to_string().contains("busy") {
                     thread::sleep(Duration::from_secs(5));
                     tx.execute(
                         "INSERT INTO copy_process (triggered_by_ewf) VALUES (?1)",
-                        [config_id],
+                        params![copy_log_id],
                     )
                     .map_err(|e2| format!("(DB) Chyba při zápisu do copy_process: {}", e2))?;
                 } else {

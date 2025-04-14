@@ -125,13 +125,13 @@ pub async fn run_dcfldd(
         return Err("(run_dcfldd) No output disks provided!".to_string());
     }
 
-    // První výstupní disk
-    let first_output = output_interfaces[0].clone();
+    // První výstupní disk (přidáváme by-path)
+    let first_output = format!("/dev/disk/by-path/{}", output_interfaces[0]);
     let actual_output_mount = match get_mountpoint_for_interface(&first_output) {
         Some(m) => m,
         None => {
             let err = format!(
-                "(run_dcfldd) Nelze najít mountpoint pro /dev/disk/by-path/{}",
+                "(run_dcfldd) Nelze najít mountpoint pro {}",
                 first_output
             );
             log_error(&err);
@@ -139,14 +139,14 @@ pub async fn run_dcfldd(
         }
     };
 
-    // Druhý výstupní disk, pokud existuje
+    // Druhý výstupní disk, pokud existuje (přidáváme by-path)
     let second_output_mount = if output_interfaces.len() > 1 {
-        let second_output = output_interfaces[1].clone();
+        let second_output = format!("/dev/disk/by-path/{}", output_interfaces[1]);
         match get_mountpoint_for_interface(&second_output) {
             Some(m) => Some(m),
             None => {
                 let err = format!(
-                    "(run_dcfldd) Nelze najít mountpoint pro /dev/disk/by-path/{}",
+                    "(run_dcfldd) Nelze najít mountpoint pro {}",
                     second_output
                 );
                 log_error(&err);
@@ -192,7 +192,7 @@ pub async fn run_dcfldd(
             let _ = conn.pragma_update(None, "journal_mode", &"DELETE");
             let _ = conn.busy_timeout(std::time::Duration::from_secs(120));
 
-            // First, load the configuration from the database
+            // Načtení konfigurace
             let config = {
                 let mut stmt = conn
                     .prepare(
@@ -220,18 +220,19 @@ pub async fn run_dcfldd(
                 .map_err(|e| format!("(DB) Chyba při získávání konfigurace: {}", e))?
             };
 
-            // Begin transaction
+            // Zahájení transakce
             let tx = conn
                 .transaction()
                 .map_err(|e| format!("(DB) Nelze zahájit transakci: {}", e))?;
 
-            // Insert into copy_log_dcfl
+            // Vložení záznamu do copy_log_dd.
+            // Použijeme INSERT, který kromě ostatních sloupců zapisuje i second_dest_disk_id.
             let insert_sql = format!(
                 "INSERT INTO copy_log_dd (
                 config_id, source, case_number, description, investigator_name, 
                 evidence_number, notes, offset, limit_value, source_disk_id, 
-                dest_disk_id, start_datetime
-            ) VALUES ({},'{}','{}','{}','{}','{}','{}','{}','{}','{}','{}',DATETIME('now'))",
+                dest_disk_id, second_dest_disk_id, start_datetime
+            ) VALUES ({},'{}','{}','{}','{}','{}','{}','{}','{}','{}','{}','{}',DATETIME('now'))",
                 config_id,
                 "dcfldd",
                 dd_params_db.case_number.replace("'", "''"),
@@ -242,7 +243,12 @@ pub async fn run_dcfldd(
                 dd_params_db.offset,
                 dd_params_db.limit,
                 input_interface_clone.replace("'", "''"),
-                first_output_clone.replace("'", "''")
+                first_output_clone.replace("'", "''"),
+                if output_interfaces.len() > 1 {
+                    output_interfaces[1].clone().replace("'", "''")
+                } else {
+                    "".to_string()
+                }
             );
 
             tx.execute_batch(&insert_sql)
@@ -250,10 +256,10 @@ pub async fn run_dcfldd(
 
             let copy_log_id = tx.last_insert_rowid();
 
-            // Insert into copy_process
+            // Vložíme záznam do copy_process; použijeme copy_log_id jako triggered_by_dd
             tx.execute(
                 "INSERT INTO copy_process (triggered_by_dd) VALUES (?1)",
-                [config_id],
+                params![copy_log_id],
             )
             .map_err(|e| format!("(DB) Chyba při zápisu do copy_process: {}", e))?;
 
