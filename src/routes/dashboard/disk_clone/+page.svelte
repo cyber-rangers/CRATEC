@@ -8,6 +8,7 @@
 	import { Slider } from '@skeletonlabs/skeleton-svelte';
 	import { writable, type Writable } from 'svelte/store';
 	import type { EwfParams, DdParams } from '$lib/stores/copyRunStore';
+	import VirtualKeyboard from '$lib/components/VirtualKeyboard.svelte';
 
 	const defaultCopyRunState = {
 		inputDisk: null,
@@ -59,6 +60,20 @@
 	let configSelected = false;
 	let selectedConfig: any = null;
 	let currentStep = 0;
+
+	let showKeyboard = false;
+	let activeInput = '';
+	let formData = {};
+
+	function openKeyboard(inputName: string) {
+		activeInput = inputName;
+		showKeyboard = true;
+	}
+
+	function closeKeyboard() {
+		showKeyboard = false;
+		activeInput = '';
+	}
 
 	async function loadConfigs() {
 		try {
@@ -599,20 +614,20 @@
 
 						<!-- Obecný field (case_number, description, investigator_name, evidence_number apod.) -->
 					{:else if stepsToUse[currentStep].field}
-						<!-- Ověříme, že field exis+tuje -->
+						<!-- Ověříme, že field existuje -->
 						{#if value === 0}
 							<input
 								type="text"
 								class="input border-primary-500 mx-auto block w-[400px] border-2 text-center"
-								bind:value={
-									$copyRunStore.ewfParams[stepsToUse[currentStep].field as keyof EwfParams]
-								}
+								bind:value={$copyRunStore.ewfParams[stepsToUse[currentStep].field as keyof EwfParams]}
+								on:focus={() => openKeyboard(stepsToUse[currentStep].field ?? '')}
 							/>
 						{:else}
 							<input
 								type="text"
 								class="input border-primary-500 mx-auto block w-[400px] border-2 text-center"
 								bind:value={$copyRunStore.ddParams[stepsToUse[currentStep].field as keyof DdParams]}
+								on:focus={() => openKeyboard(stepsToUse[currentStep].field ?? '')}
 							/>
 						{/if}
 					{/if}
@@ -633,6 +648,13 @@
 {/if}
 
 <DiskSelectModal bind:openState={DiskSelectModalOpen} side={modalSide} />
+
+<VirtualKeyboard
+	bind:showKeyboard
+	bind:activeInput={activeInput}
+	bind:formData={formData}
+	on:closeKeyboard={closeKeyboard}
+/>
 
 <style lang="postcss">
 	/* Ponecháváme vaše původní styly: */
