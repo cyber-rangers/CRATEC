@@ -16,7 +16,6 @@ mod report;
 mod led;
 mod disk_utils;
 mod config;
-mod report;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -24,6 +23,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The function now gets its own connection from the pool
     db::initialize_db()?;
     report::generate_report()?;
+
+    //TEST
+    let device = "/dev/sda";
+
+    // Test funkce detect_hpa_dco
+    let (has_hpa, has_dco) = disk_utils::detect_hpa_dco(device);
+    println!("HPA: {:?}", has_hpa);
+    println!("DCO: {:?}", has_dco);
+
+    // Test funkce get_disk_info
+    match disk_utils::get_disk_info(device) {
+        Ok(disk_info) => {
+            println!("Disk Info:");
+            println!("Serial: {}", disk_info.serial);
+            println!("Capacity (bytes): {}", disk_info.capacity_bytes);
+            println!("Partitions: {:?}", disk_info.partitions);
+            println!("Disk Encryption: {:?}", disk_info.disk_encryption);
+            println!("HPA: {}", disk_info.has_hpa);
+            println!("DCO: {}", disk_info.has_dco);
+        }
+        Err(e) => {
+            println!("Failed to get disk info: {}", e);
+        }
+    }
+    // Konec TEST
 
     Builder::default()
         .plugin(websocket_init())

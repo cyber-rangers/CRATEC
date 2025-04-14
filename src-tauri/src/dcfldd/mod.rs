@@ -1,5 +1,5 @@
 use crate::db::DB_CONN;
-use crate::disk_utils::{get_mountpoint_for_interface, get_total_blocks};  // Přidáno
+use crate::disk_utils::{get_mountpoint_for_interface, get_total_blocks, get_block_size};  // Přidáno
 use crate::led::LED_CONTROLLER;
 use crate::logger::{log_debug, log_error, log_warn};
 use crate::websocket;
@@ -321,8 +321,15 @@ pub async fn run_dcfldd(
     let block_size = if config.format != "auto" {
         config.format.parse::<u64>().unwrap_or(512)
     } else {
-        512
+        match get_block_size(&actual_input_device) {
+            Ok(size) => size,
+            Err(e) => {
+                log_warn(&format!("Could not auto-detect block size, defaulting to 512: {}", e));
+                512
+            }
+        }
     };
+
     push_key_val(&mut args_exec, &mut args_print, "bs", &block_size.to_string());
 
     // Offset handling (skip parameter)
@@ -407,11 +414,11 @@ pub async fn run_dcfldd(
     println!("{}", cmd_print);
     println!("================================\n");
 
-    let total_blocks = match get_total_blocks(&actual_input_device, block_size) {
+    let total_blocks = match get_total_blocks(&actual_input_device) {
         Ok(tb) => tb,
         Err(e) => {
             log_warn(&format!("Cannot get total blocks, using fallback: {}", e));
-            5_000_000 // fallback if blockdev fails
+            5_000_000 // fallback if lsblk fails
         }
     };
     println!("Test: Total blocks calculated: {}", total_blocks);
