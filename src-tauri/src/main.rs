@@ -7,12 +7,14 @@ mod db;
 mod disk_info;
 mod disk_manager;
 mod ewfacquire;
+mod dcfldd;
 mod initial_setup;
 mod logger;
 mod power_actions;
 mod websocket;
 mod report;
 mod led;
+mod disk_utils;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,6 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             copy_configs::delete_or_deactivate_config,
             copy_configs::save_new_dd_config,
             ewfacquire::run_ewfacquire,
+            dcfldd::run_dcfldd,
             disk_manager::get_directory_contents,
             power_actions::shutdown_system,
             power_actions::restart_system

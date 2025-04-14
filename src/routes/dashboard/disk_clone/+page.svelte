@@ -171,6 +171,8 @@
 	$: isFirstStep = currentStep === 0;
 	$: isLastStep = currentStep === stepsToUse.length - 1;
 
+	$: canProceed = $copyRunStore.inputDisk !== null && $copyRunStore.outputDisks.length > 0;
+
 	function isCurrentStep(index: number) {
 		return currentStep === index;
 	}
@@ -230,13 +232,21 @@
 				input_interface,
 				output_interfaces
 			});
-			await invoke('run_ewfacquire', {
+
+			invoke('run_ewfacquire', {
 				config_id,
 				ewf_params,
 				input_interface,
 				output_interfaces
+			}).then(() => {
+				console.log('Ewfacquire dokončeno.');
 			});
-			console.log('Ewfacquire dokončeno.');
+
+			configSelected = false;
+			processStarted = false;
+			currentStep = 0;
+			copyRunStore.set(defaultCopyRunState);
+
 		} catch (error) {
 			console.error('Chyba při spouštění ewfacquire:', error);
 		}
@@ -268,13 +278,21 @@
 				input_interface,
 				output_interfaces
 			});
-			await invoke('run_ddacquire', {
+
+			invoke('run_dcfldd', {
 				config_id,
 				dd_params,
 				input_interface,
 				output_interfaces
+			}).then(() => {
+				console.log('DD acquire completed.');
 			});
-			console.log('DD acquire completed.');
+
+			configSelected = false;
+			processStarted = false;
+			currentStep = 0;
+			copyRunStore.set(defaultCopyRunState);
+			
 		} catch (error) {
 			console.error('Error running ddacquire:', error);
 		}
@@ -606,7 +624,7 @@
 				<button type="button" class="btn bg-surface-800" on:click={prevStep} disabled={isFirstStep}>
 					<span>Předchozí</span>
 				</button>
-				<button type="button" class="btn bg-surface-800" on:click={nextStep}>
+				<button type="button" class="btn bg-surface-800" on:click={nextStep} disabled={!canProceed}>
 					<span>{isLastStep ? 'Dokončit' : 'Další'}</span>
 				</button>
 			</nav>

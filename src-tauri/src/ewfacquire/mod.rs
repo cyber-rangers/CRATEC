@@ -1,7 +1,7 @@
-use crate::db::DB_CONN;
 use crate::led::LED_CONTROLLER;
 use crate::logger::{log_debug, log_error, log_warn};
 use crate::websocket;
+use crate::disk_utils::get_mountpoint_for_interface;
 use chrono::{Local, Utc};
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -14,6 +14,7 @@ use std::time::Duration;
 use tauri_plugin_shell::ShellExt;
 
 use tauri_plugin_shell::process::CommandEvent;
+
 
 /// Pomocná funkce pro provádění DB operací s opakovaným pokusem.
 fn execute_with_retry<T, F>(operation_name: &str, mut f: F, max_retries: usize) -> Result<T, String>
@@ -152,55 +153,6 @@ struct WsProcessDone {
     id: i64,
     status: String,
     end_datetime: String,
-}
-
-/// Najde mountpoint pro zařízení podle zadaného diskového identifikátoru.
-fn get_mountpoint_for_interface(id_path: &str) -> Option<String> {
-    let mounts_str = fs::read_to_string("/proc/mounts").ok()?;
-    let mut best_match: Option<(String, usize)> = None;
-
-    for line in mounts_str.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 2 {
-            continue;
-        }
-        let device = parts[0];
-        let mountpoint = parts[1];
-
-        if let Ok(real_dev) = Path::new(device).canonicalize() {
-            if let Ok(entries) = fs::read_dir("/dev/disk/by-path") {
-                for entry in entries.flatten() {
-                    if let Ok(filename) = entry.file_name().into_string() {
-                        let full_link = format!("/dev/disk/by-path/{}", filename);
-                        if let Ok(link_target) = fs::read_link(&full_link) {
-                            if let Ok(link_canon) = Path::new("/dev/disk/by-path")
-                                .join(&link_target)
-                                .canonicalize()
-                            {
-                                if link_canon == real_dev && filename.contains(id_path) {
-                                    let partition_number = filename
-                                        .split("-part")
-                                        .nth(1)
-                                        .and_then(|s| s.parse::<usize>().ok())
-                                        .unwrap_or(0);
-                                    if let Some((_, best_num)) = best_match {
-                                        if partition_number > best_num {
-                                            best_match =
-                                                Some((mountpoint.to_string(), partition_number));
-                                        }
-                                    } else {
-                                        best_match =
-                                            Some((mountpoint.to_string(), partition_number));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    best_match.map(|(mp, _)| mp)
 }
 
 /// Tauri příkaz pro spuštění ewfacquire pomocí Tauri Shell.
