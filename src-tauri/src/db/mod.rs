@@ -15,6 +15,8 @@ pub mod interface_scheme;
 pub mod logging_scheme;
 pub mod process_log_scheme;
 
+use crate::config::DATABASE_PATH;
+
 // Maximum number of connections in the pool
 const MAX_POOL_SIZE: usize = 10;
 // Number of retries for getting a connection
@@ -22,8 +24,6 @@ const MAX_RETRIES: usize = 5;
 // Time to wait between retries (milliseconds)
 const RETRY_WAIT_MS: u64 = 100;
 
-// Database path
-const DB_PATH: &str = "/var/lib/cratec/database.db";
 
 // Counter for tracking connection IDs
 static mut CONNECTION_COUNTER: u64 = 0;
@@ -86,7 +86,7 @@ impl ConnectionPool {
         
         println!("[{}] [DB:{}] Creating new database connection...", get_timestamp(), connection_id);
         let conn = Connection::open_with_flags(
-            DB_PATH,
+            DATABASE_PATH,
             OpenFlags::SQLITE_OPEN_READ_WRITE |
             OpenFlags::SQLITE_OPEN_CREATE |
             OpenFlags::SQLITE_OPEN_FULL_MUTEX
@@ -229,7 +229,7 @@ pub fn initialize_db() -> Result<(), Box<dyn Error>> {
     println!("[{}] Initializing database schema...", get_timestamp());
     
     // Ujisti se, že existuje adresář pro databázi.
-    if let Some(parent_dir) = Path::new(DB_PATH).parent() {
+    if let Some(parent_dir) = Path::new(DATABASE_PATH).parent() {
         fs::create_dir_all(parent_dir)?;
     }
     
@@ -271,7 +271,7 @@ pub fn create_new_connection() -> Result<Connection, Box<dyn Error>> {
     println!("[{}] [DB:{}] Creating standalone connection (not pooled)...", get_timestamp(), connection_id);
     
     let conn = Connection::open_with_flags(
-        DB_PATH,
+        DATABASE_PATH,
         OpenFlags::SQLITE_OPEN_READ_WRITE |
         OpenFlags::SQLITE_OPEN_CREATE |
         OpenFlags::SQLITE_OPEN_FULL_MUTEX

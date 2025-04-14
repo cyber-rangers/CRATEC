@@ -10,9 +10,8 @@ use std::time::Duration;
 use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 use tauri::command;
 use udev::Device;
-
+use crate::config::MOUNT_ROOT;
 // Konstantní cesta pro mount root – tento adresář vytvořte jednou jako root a změňte vlastníka (např. na "master")
-const MOUNT_ROOT: &str = "/mnt/CRATEC";
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct SataDevice {

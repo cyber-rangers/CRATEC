@@ -1,4 +1,5 @@
 use rusqlite::{Connection, Result, ToSql};
+use crate::config::DATABASE_PATH;
 
 /// **Struktura pro vkládání nového záznamu (bez ID) pro EWF konfiguraci**
 #[derive(Debug, serde::Serialize)]
@@ -378,7 +379,7 @@ pub fn get_all_configs(conn: &Connection) -> Result<CombinedConfigs> {
 /// **Asynchronní příkaz pro získání všech aktivních konfigurací**
 #[tauri::command(rename_all = "snake_case")]
 pub async fn get_all_active_configs() -> Result<CombinedConfigs, String> {
-    let conn = Connection::open("/var/lib/cratec/database.db")
+    let conn = Connection::open(DATABASE_PATH)
         .map_err(|e| format!("Error opening DB: {}", e))?;
     let configs = tauri::async_runtime::spawn_blocking(move || get_all_configs(&conn))
         .await
@@ -422,7 +423,7 @@ pub async fn delete_or_deactivate_config(
     config_id: i32,
     config_type: String,
 ) -> Result<(), String> {
-    let conn = Connection::open("/var/lib/cratec/database.db")
+    let conn = Connection::open(DATABASE_PATH)
         .map_err(|e| format!("Chyba při otevírání DB: {}", e))?;
     tauri::async_runtime::spawn_blocking(move || {
         delete_or_deactivate(&conn, config_id, &config_type)

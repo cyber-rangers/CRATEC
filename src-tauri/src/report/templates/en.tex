@@ -1,0 +1,133 @@
+\documentclass[a4paper,10pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{helvet}
+\usepackage{graphicx}
+\renewcommand{\familydefault}{\sfdefault}
+
+\geometry{margin=0.5in}
+\setlength{\parindent}{0pt}
+\pagestyle{empty}
+\titleformat{\section}{\bfseries\small}{}{0em}{}
+\titleformat{\subsection}[runin]{\bfseries}{}{0em}{}[.]
+
+\begin{document}
+\small
+
+{\LARGE\textbf{Audit Log}}\\[1em]
+
+\textbf{Software Hash:} {{ software_hash }} \hfill \textbf{Build Date:} {{ build_date }}\\
+\textbf{Unit Serial Number:} {{ serial_number }} \hfill \textbf{Time (Local):} {{ time_local }}\\
+\textbf{Date:} {{ date }}
+
+\vspace{1em}
+\section*{Operation Parameters}
+\begin{tabular}{@{}ll}
+Mode: & {{ mode }} \\
+Method: & {{ method }} \\
+Hash: & {{ hash_type }} \\
+Image Path: & {{ image_path }} \\
+LBA Count: & {{ lba_count }} \\
+Source Logical Sector Size: & {{ sector_size }} \\
+Segment Size: & {{ segment_size }} \\
+Compression Level: & {{ compression }} \\
+Hash Enabled: & {{ hash_enabled }} \\
+Verify Hash: & {{ verify_hash }} \\
+Unlock HPA: & {{ unlock_hpa }} \\
+Unlock DCO/ACS3: & {{ unlock_dco }} \\
+Error Granularity: & {{ granularity }} \\
+Result: & {{ result }} \\
+Duration: & {{ duration }} \\
+Time at Completion: & {{ time_complete }} \\
+\end{tabular}
+
+\vspace{1em}
+\section*{Hash Information}
+\begin{tabular}{@{}ll}
+LBA Count: & {{ hash_lba_count }} \\
+Sector Size: & {{ hash_sector_size }} \\
+Hash Type: & {{ hash_primary_type }} \\
+Source Hash: & {{ hash_primary }} \\
+Secondary Hash Type: & {{ hash_secondary_type }} \\
+Secondary Source Hash: & {{ hash_secondary }} \\
+\end{tabular}
+
+\vspace{1em}
+\section*{Case Information}
+\begin{tabular}{@{}ll}
+Case/File Name: & {{ case_file }} \\
+Case ID: & {{ case_id }} \\
+Examiner: & {{ examiner }} \\
+Case Notes: & {{ notes }} \\
+\end{tabular}
+
+\vspace{1em}
+\section*{Segment Information}
+\begin{tabular}{@{}ll}
+UID: & {{ segment_uid }} \\
+Destination: & {{ segment_path }} \\
+Filesystem: & {{ segment_fs }} \\
+Serial: & {{ segment_serial }} \\
+File Name: & {{ segment_file }} \\
+Hash: & {{ segment_hash }} \\
+\end{tabular}
+
+\vspace{1em}
+\section*{Drive Information}
+{\small
+\begin{longtable}{|p{1.3cm}|p{0.8cm}|p{3.2cm}|p{4.2cm}|p{1.1cm}|p{1.5cm}|p{1.5cm}|}
+\hline
+Bay & Role & Serial & Model & RAID & Filesystem & Cipher \\
+\hline
+{% for drive in drives %}
+{{ drive.bay }} & {{ drive.role }} & {{ drive.serial }} & {{ drive.model }} & {{ drive.raid }} & {{ drive.fs }} & {{ drive.cipher }} \\
+\hline
+{% endfor %}
+\end{longtable}
+}
+
+\vspace{1em}
+\section*{Drive Capacities}
+\begin{tabular}{@{}lll}
+Bay & Serial & Capacity-GB \\
+{% for cap in capacities %}
+{{ cap.bay }} & {{ cap.serial }} & {{ cap.capacity }} \\
+{% endfor %}
+\end{tabular}
+
+\vspace{1em}
+\section*{Drive ATA Security Information}
+\begin{tabular}{@{}llll}
+Bay & Role & Enabled & Locked \\
+{% for ata in ata_security %}
+{{ ata.bay }} & {{ ata.role }} & {{ ata.enabled }} & {{ ata.locked }} \\
+{% endfor %}
+\end{tabular}
+
+\vspace{1em}
+\section*{Drive Encryption Information}
+\begin{tabular}{@{}llll}
+Bay & Role & Encrypted & Locked \\
+{% for enc in encryption %}
+{{ enc.bay }} & {{ enc.role }} & {{ enc.encrypted }} & {{ enc.locked }} \\
+{% endfor %}
+\end{tabular}
+
+\vspace{1em}
+\section*{Source Partition Information}
+\begin{tabular}{|c|c|c|c|c|c|c|}
+\hline
+Partition & File System & Start & End & Size & Encryption & Decrypted \\
+\hline
+{% for part in partitions %}
+{{ part.index }} & {{ part.fs }} & {{ part.start }} & {{ part.end }} & {{ part.size }} & {{ part.encryption }} & {{ part.decrypted }} \\
+\hline
+{% endfor %}
+\end{tabular}
+
+\end{document}

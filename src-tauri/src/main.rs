@@ -15,13 +15,15 @@ mod websocket;
 mod report;
 mod led;
 mod disk_utils;
+mod config;
+mod report;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize the database without passing a connection
     // The function now gets its own connection from the pool
     db::initialize_db()?;
-    report::run_sample()?;
+    report::generate_report()?;
 
     Builder::default()
         .plugin(websocket_init())
