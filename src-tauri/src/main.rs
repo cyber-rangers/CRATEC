@@ -22,7 +22,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize the database without passing a connection
     // The function now gets its own connection from the pool
     db::initialize_db()?;
-    report::generate_report()?;
 
     //TEST
     let device = "/dev/sda";
