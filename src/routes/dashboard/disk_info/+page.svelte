@@ -1,228 +1,133 @@
 <script lang="ts">
-	import { Accordion } from '@skeletonlabs/skeleton-svelte';
-	import { Usb, HardDrive } from 'lucide-svelte';
-	import { deviceStore } from '$lib/stores/deviceStore';
-	import { get, writable } from 'svelte/store';
-	import { invoke } from '@tauri-apps/api/core';
-	import type { DeviceBase } from '$lib/stores/deviceStore';
-  
-	// Lokální storages pro detailní informace
-	let hddDeviceDetails = writable<Record<string, any>>({});
-	let usbDeviceDetails = writable<Record<string, any>>({});
-  
-	// Funkce pro načítání detailů – používáme physical_path místo devicePath
-	async function fetchDeviceDetails(devicePath: string, isUsb: boolean) {
-	  console.log(`Fetching details for ${devicePath}, isUsb: ${isUsb}`);
-	  try {
-		const command = isUsb ? 'get_usb_device_details' : 'get_hdd_details';
-		const detailedInfo = await invoke(command, { physical_path: devicePath });
-		console.log('Detailed info fetched:', detailedInfo);
-		return detailedInfo;
-	  } catch (error) {
-		console.error('Failed to fetch device details:', error);
-		return null;
-	  }
-	}
-  
-	let fetchTimeout: ReturnType<typeof setTimeout>;
-  
-	// Reaktivně aktualizujeme detailní informace každých 1 sekundu
-	$: {
-	  clearTimeout(fetchTimeout);
-	  fetchTimeout = setTimeout(() => {
-		console.log('Device Store Updated:', $deviceStore);
-		let sataDevices: DeviceBase[] = $deviceStore.sata_devices || [];
-		let usbDevices: DeviceBase[] = $deviceStore.usb_devices || [];
-  
-		// Aktualizace HDD detailů – smažeme položky, které již nejsou v deviceStore
-		hddDeviceDetails.update((current) => {
-		  const updated = { ...current };
-		  for (let path in updated) {
-			if (!sataDevices.find((device) => device.interface === path)) {
-			  delete updated[path];
-			}
-		  }
-		  return updated;
-		});
-  
-		// Aktualizace USB detailů
-		usbDeviceDetails.update((current) => {
-		  const updated = { ...current };
-		  for (let path in updated) {
-			if (!usbDevices.find((device) => device.interface === path)) {
-			  delete updated[path];
-			}
-		  }
-		  return updated;
-		});
-  
-		// Načítání detailů HDD, pokud ještě nejsou uloženy
-		for (let device of sataDevices) {
-		  if (!get(hddDeviceDetails)[device.interface]) {
-			fetchDeviceDetails(device.interface, false).then((info: any) => {
-			  if (info) {
-				hddDeviceDetails.update((d) => ({ ...d, [device.interface]: info }));
-			  }
-			});
-		  }
-		}
-  
-		// Načítání detailů USB
-		for (let device of usbDevices) {
-		  if (!get(usbDeviceDetails)[device.interface]) {
-			fetchDeviceDetails(device.interface, true).then((info: any) => {
-			  if (info) {
-				usbDeviceDetails.update((d) => ({ ...d, [device.interface]: info }));
-			  }
-			});
-		  }
-		}
-	  }, 1000);
-	}
-  
-	// Debug log – ověříme obsah store
-	$: console.log('deviceStore:', $deviceStore);
-  
-	// Používáme data přímo z deviceStore; zde pracujeme s objekty typu DeviceBase.
-	// Není třeba vytvářet lokální typy pro HDD či USB, stačí přidat pole "type".
-	type Disk = DeviceBase & { type: 'usb' | 'sata' };
-  
-	// Vytvoříme reaktivní proměnnou allDisks, která kombinuje USB a SATA zařízení.
-	$: allDisks = [
-	  ...$deviceStore.usb_devices
-		.map((d): Disk => ({ ...d, type: 'usb' })),
-	  ...$deviceStore.sata_devices
-		.map((d): Disk => ({ ...d, type: 'sata' }))
-	];
-	$: console.log('allDisks:', allDisks);
-  </script>
-  
-  <div class="bg-surface-800 accordion-background p-4 rounded-xl">
-	<Accordion hover="hover:bg-primary-500" collapsible>
-	  {#each $deviceStore.sata_devices || [] as device}
-		<Accordion.Item value={device.name}>
-		  {#snippet lead()}
-			<HardDrive size={24} />
-		  {/snippet}
-		  {#snippet control()}
-			HDD {device.name}
-		  {/snippet}
-		  {#snippet panel()}
-			{#if $hddDeviceDetails[device.interface]}
-			  <h2>{$hddDeviceDetails[device.interface].device_model}</h2>
-			  <p><strong>Model Family:</strong> {$hddDeviceDetails[device.interface].model_family}</p>
-			  <p><strong>Serial Number:</strong> {$hddDeviceDetails[device.interface].serial_number}</p>
-			  <p><strong>Firmware Version:</strong> {$hddDeviceDetails[device.interface].firmware_version}</p>
-			  <p><strong>User Capacity:</strong> {$hddDeviceDetails[device.interface].user_capacity}</p>
-			  <p><strong>Sector Sizes:</strong> {$hddDeviceDetails[device.interface].sector_sizes}</p>
-			  <p><strong>Rotation Rate:</strong> {$hddDeviceDetails[device.interface].rotation_rate}</p>
-			  <p><strong>Form Factor:</strong> {$hddDeviceDetails[device.interface].form_factor}</p>
-			  <p><strong>SMART Status:</strong> {$hddDeviceDetails[device.interface].smart_status}</p>
-			  <h3>SMART Attributes:</h3>
-			  <div class="table-container" style="border-bottom-width:2px;">
-				<table class="table-hover w-full border-collapse mt-2">
-				  <thead class="text-surface-900 bg-gray-200">
-					<tr>
-					  <th>Attribute Name (ID#)</th>
-					  <th>Value</th>
-					  <th>Worst</th>
-					  <th>Threshold</th>
-					  <th>Type</th>
-					  <th>When Failed</th>
-					  <th>Raw Value</th>
-					</tr>
-				  </thead>
-				  <tbody>
-					{#each $hddDeviceDetails[device.interface].smart_attributes || [] as attr}
-					  <tr>
-						<td>{attr.name} ({attr.id})</td>
-						<td>{attr.value}</td>
-						<td>{attr.worst}</td>
-						<td>{attr.thresh}</td>
-						<td>{attr.type_field}</td>
-						<td>{attr.when_failed}</td>
-						<td>{attr.raw_value}</td>
-					  </tr>
-					{/each}
-				  </tbody>
-				</table>
-			  </div>
-			{:else}
-			  <p>Loading detailed HDD information...</p>
-			{/if}
-		  {/snippet}
-		</Accordion.Item>
-	  {/each}
-  
-	  {#each $deviceStore.usb_devices || [] as device, index}
-		<Accordion.Item value={device.name}>
-		  {#snippet lead()}
-			<Usb size={24} />
-		  {/snippet}
-		  {#snippet control()}
-			USB {device.name}
-		  {/snippet}
-		  {#snippet panel()}
-			{#if $usbDeviceDetails[device.interface]}
-			  <h2>{$usbDeviceDetails[device.interface].id_model}</h2>
-			  <p><strong>Device Name:</strong> {$usbDeviceDetails[device.interface].devname}</p>
-			  <p><strong>Device Type:</strong> {$usbDeviceDetails[device.interface].devtype}</p>
-			  <p><strong>Vendor:</strong> {$usbDeviceDetails[device.interface].id_vendor}</p>
-			  <p><strong>Product:</strong> {$usbDeviceDetails[device.interface].id_model}</p>
-			  <p><strong>Serial Number:</strong> {$usbDeviceDetails[device.interface].id_serial_short}</p>
-			  <p><strong>USB Driver:</strong> {$usbDeviceDetails[device.interface].id_usb_driver}</p>
-			  <p><strong>Vendor ID:</strong> {$usbDeviceDetails[device.interface].id_vendor_id}</p>
-			  <p><strong>Subsystem:</strong> {$usbDeviceDetails[device.interface].subsystem}</p>
-			  <h3>Additional Details:</h3>
-			  <div class="additional-details mt-2">
-				<p><strong>Major:</strong> {$usbDeviceDetails[device.interface].major}</p>
-				<p><strong>Minor:</strong> {$usbDeviceDetails[device.interface].minor}</p>
-				<p><strong>Usec Initialized:</strong> {$usbDeviceDetails[device.interface].usec_initialized}</p>
-			  </div>
-			{:else}
-			  <p>Loading detailed USB device information...</p>
-			{/if}
-		  {/snippet}
-		</Accordion.Item>
-	  {/each}
-	</Accordion>
-  </div>
-  
-  <style lang="postcss">
-	.accordion-background {
-	  background-color: var(--color-surface-900);
-	  padding: 20px;
-	  border-radius: 20px;
-	}
-	h2 {
-	  font-size: 1.5rem;
-	  margin-bottom: 0.5rem;
-	}
-	h3 {
-	  font-size: 1.25rem;
-	  margin-top: 1rem;
-	  font-weight: bold;
-	  margin-bottom: 0.5rem;
-	}
-	p {
-	  margin: 0.25rem 0;
-	}
-	table {
-	  width: 100%;
-	  border-collapse: collapse;
-	  margin-top: 1rem;
-	}
-	th,
-	td {
-	  border: 1px solid #ddd;
-	  padding: 0.5rem;
-	  text-align: left;
-	}
-	th {
-	  background-color: #f2f2f2;
-	}
-	.additional-details p {
-	  margin: 0.25rem 0;
-	}
-  </style>
-  
+    import { Accordion } from '@skeletonlabs/skeleton-svelte';
+    import { HardDrive } from 'lucide-svelte';
+    import { deviceStore } from '$lib/stores/deviceStore';
+    import { get, writable } from 'svelte/store';
+    import { invoke } from '@tauri-apps/api/core';
+    import { onMount } from 'svelte';
+
+    // Hodnota pro řízení aktuálně otevřených položek v novém Accordion stylu
+    let value: string[] = [];
+
+    // Store pro lsblk JSON
+    let lsblkDetails = writable<Record<string, any>>({});
+
+    // Spojí usb_devices a sata_devices do jednoho pole
+    $: allDisks = [
+        ...$deviceStore.usb_devices.map((d) => ({ ...d, type: 'usb' })),
+        ...$deviceStore.sata_devices.map((d) => ({ ...d, type: 'sata' }))
+    ];
+    $: console.log('allDisks:', allDisks);
+
+    // Získá lsblk JSON pro dané zařízení
+    async function fetchLsblkForDisk(diskInterface: string) {
+        const devnode = `/dev/disk/by-path/${diskInterface}`;
+        try {
+            const result = await invoke('get_lsblk_json', { device: devnode });
+            console.log(`lsblk result for ${devnode}:`, result);
+            lsblkDetails.update((details) => ({ ...details, [diskInterface]: result }));
+        } catch (e) {
+            console.error(`Error fetching lsblk info for ${devnode}`, e);
+        }
+    }
+
+    // Po načtení zavolá fetch pro každé zařízení
+    onMount(() => {
+        allDisks.forEach((disk) => {
+            if (!get(lsblkDetails)[disk.interface]) {
+                fetchLsblkForDisk(disk.interface);
+            }
+        });
+    });
+
+    // Při změně Accordion hodnoty uložíme novou hodnotu
+    function handleValueChange(details: { value: string[] }) {
+        value = details.value;
+    }
+</script>
+
+<Accordion {value} onValueChange={handleValueChange} collapsible>
+    {#each allDisks as disk, i}
+        <Accordion.Item value={disk.name || 'Unknown'}>
+            {#snippet lead()}
+                <HardDrive size={24} />
+            {/snippet}
+            {#snippet control()}
+                {disk.type.toUpperCase()} {disk.name}
+            {/snippet}
+            {#snippet panel()}
+                {#if $lsblkDetails[disk.interface] &&
+                    $lsblkDetails[disk.interface].blockdevices &&
+                    $lsblkDetails[disk.interface].blockdevices.length > 0}
+                    {@const dev = $lsblkDetails[disk.interface].blockdevices[0]}
+                    <div class="device-info">
+                        <p><strong>Name:</strong> {dev.name}</p>
+                        <p><strong>Model:</strong> {dev.model || 'Unknown'}</p>
+                        <p><strong>Serial:</strong> {dev.serial || 'Unknown'}</p>
+                        <p><strong>Size:</strong> {dev.size || 'Unknown'}</p>
+                        <p><strong>Type:</strong> {dev.type || 'Unknown'}</p>
+                        <p><strong>Mountpoint:</strong> {dev.mountpoint || 'None'}</p>
+                        <p><strong>Path:</strong> {dev.path || 'Unknown'}</p>
+                        <p><strong>Owner:</strong> {dev.owner || 'Unknown'}</p>
+                        <p><strong>Transport:</strong> {dev.tran || 'Unknown'}</p>
+                        <p><strong>Vendor:</strong> {dev.vendor || 'Unknown'}</p>
+                        <p><strong>HCTL:</strong> {dev.hctl || 'Unknown'}</p>
+                        <p><strong>Disk Seq:</strong> {dev["disk-seq"] || 'Unknown'}</p>
+                        <p><strong>Fstype:</strong> {dev.fstype || 'None'}</p>
+                        <p><strong>State:</strong> {dev.state || 'Unknown'}</p>
+                        <p><strong>RA:</strong> {dev.ra || 'Unknown'}</p>
+                    </div>
+                    {#if dev.children && dev.children.length > 0}
+                        <h3>Partitions:</h3>
+                        {#each dev.children as part}
+                            <div class="partition">
+                                <p><strong>Partition Name:</strong> {part.name}</p>
+                                <p><strong>Label:</strong> {part.label || 'None'}</p>
+                                <p><strong>Size:</strong> {part.size || 'Unknown'}</p>
+                                <p><strong>Filesystem:</strong> {part.fstype || 'Unknown'}</p>
+                            </div>
+                        {/each}
+                    {/if}
+                    <!-- Kompletní JSON lsblk -->
+                    <pre>{JSON.stringify($lsblkDetails[disk.interface], null, 2)}</pre>
+                {:else}
+                    <p>Loading disk information...</p>
+                {/if}
+            {/snippet}
+        </Accordion.Item>
+        {#if i < allDisks.length - 1}
+            <hr class="hr" />
+        {/if}
+    {/each}
+</Accordion>
+
+<style lang="postcss">
+    .accordion-background {
+        background-color: var(--color-surface-900);
+        padding: 20px;
+        border-radius: 20px;
+        margin-bottom: 2rem;
+    }
+    .hr {
+        border: 0;
+        border-top: 1px solid var(--color-surface-400);
+        margin: 12px 0;
+    }
+    .device-info p {
+        margin: 0.15rem 0;
+    }
+    .partition {
+        margin-bottom: 1rem;
+        padding: 0.5rem;
+        border: 1px solid #444;
+        border-radius: 4px;
+    }
+    pre {
+        background: #333;
+        color: #fff;
+        padding: 1rem;
+        border-radius: 4px;
+        overflow: auto;
+        margin-top: 1rem;
+    }
+</style>

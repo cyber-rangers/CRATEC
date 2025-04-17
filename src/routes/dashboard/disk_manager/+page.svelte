@@ -19,7 +19,7 @@
 	const fileItems = writable<FileItem[]>([]);
 
 	let disks: DeviceBase[] = [];
-	
+
 	// Variables to store screen resolution
 	let screenWidth = 0;
 	let screenHeight = 0;
@@ -33,7 +33,7 @@
 
 	// Předplatíme deviceStore a vezmeme jen zařízení s definovaným mountpointem
 	const unsubscribe = deviceStore.subscribe((value) => {
-		disks = [...value.usb_devices, ...value.sata_devices].filter(d => d.mountpoint);
+		disks = [...value.usb_devices, ...value.sata_devices].filter((d) => d.mountpoint);
 	});
 
 	/**
@@ -61,74 +61,6 @@
 		fileItems.set([]);
 	}
 </script>
-
-<style>
-	/* Kontejner s boxy pro disky */
-	.disk-container {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 1rem;
-		padding: 1rem;
-	}
-
-	.disk-box {
-		background: #fff;
-		border: 1px solid #ddd;
-		border-radius: 8px;
-		padding: 1rem;
-		cursor: pointer;
-		width: 150px;
-		text-align: center;
-		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-		transition: transform 0.2s;
-	}
-
-	.disk-box:hover {
-		transform: translateY(-5px);
-	}
-
-	.disk-info {
-		margin-top: 0.5rem;
-	}
-
-	.disk-name {
-		font-weight: bold;
-		margin-bottom: 0.5rem;
-	}
-
-	.filemanager-view {
-		padding: 1rem;
-	}
-
-	.filemanager-view button {
-		margin-bottom: 1rem;
-	}
-
-	.filemanager-view ul {
-		list-style: none;
-		padding: 0;
-	}
-
-	.filemanager-view li {
-		margin: 0.5rem 0;
-		padding: 0.5rem;
-		border: 1px solid #eee;
-		border-radius: 4px;
-	}
-	
-	.resolution-info {
-        position: absolute;
-        top: 10px;
-        left: 50%;
-        transform: translateX(-50%);
-        background-color: rgba(0,0,0,0.7);
-        color: white;
-        padding: 5px 8px;
-        border-radius: 4px;
-        font-size: 12px;
-        z-index: 100;
-    }
-</style>
 
 <!-- Display current resolution -->
 <div class="resolution-info">Resolution: {screenWidth}x{screenHeight}px</div>
@@ -170,3 +102,76 @@
 		</ul>
 	</div>
 {/if}
+
+<style>
+	/* Kontejner s boxy pro disky */
+	.disk-container {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 1rem;
+		padding: 1rem;
+	}
+
+	.disk-box {
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		align-items: center;
+		background: var(--color-surface-900);
+		border: 3px solid var(--color-primary-600);
+		border-radius: 8px;
+		padding: 1rem;
+		cursor: pointer;
+		width: 150px;
+		height: 120px;
+		text-align: center;
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+		transition: transform 0.2s;
+	}
+
+	.disk-box:hover {
+		transform: translateY(-5px);
+	}
+
+	.disk-info {
+		margin-top: 0.5rem;
+	}
+
+	.disk-name {
+		font-weight: bold;
+		margin-bottom: 0.5rem;
+	}
+
+	.filemanager-view {
+		padding: 1rem;
+	}
+
+	.filemanager-view button {
+		margin-bottom: 1rem;
+	}
+
+	.filemanager-view ul {
+		list-style: none;
+		padding: 0;
+	}
+
+	.filemanager-view li {
+		margin: 0.5rem 0;
+		padding: 0.5rem;
+		border: 1px solid #eee;
+		border-radius: 4px;
+	}
+
+	.resolution-info {
+		position: absolute;
+		top: 10px;
+		left: 50%;
+		transform: translateX(-50%);
+		background-color: rgba(0, 0, 0, 0.7);
+		color: white;
+		padding: 5px 8px;
+		border-radius: 4px;
+		font-size: 12px;
+		z-index: 100;
+	}
+</style>

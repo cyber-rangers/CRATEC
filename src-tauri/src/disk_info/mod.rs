@@ -98,7 +98,8 @@ fn find_devnode_by_physical_path(physical_path: &str) -> Result<String, String> 
             device
                 .property_value("ID_PATH")
                 .and_then(|v| v.to_str())
-                .map(|s| s == physical_path)
+                // Místo přísné rovnosti ověříme, zda hodnota začíná na zadaný řetězec.
+                .map(|s| s.starts_with(physical_path))
                 .unwrap_or(false)
         })
         .and_then(|device| device.devnode().map(|n| n.to_string_lossy().to_string()))

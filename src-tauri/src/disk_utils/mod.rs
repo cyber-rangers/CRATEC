@@ -6,8 +6,8 @@ use std::str;
 use std::time::Duration;
 use std::thread;
 
-/// Spustí příkaz `sudo lsblk -J -O -b <device>` a vrátí výsledný JSON.
-fn get_lsblk_json(device: &str) -> Result<Value, String> {
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_lsblk_json(device: &str) -> Result<Value, String> {
     println!("[DEBUG] Spouštím lsblk pro device: {}", device);
     let output = Command::new("sudo")
         .arg("lsblk")

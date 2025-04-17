@@ -68,7 +68,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             dcfldd::run_dcfldd,
             disk_manager::get_directory_contents,
             power_actions::shutdown_system,
-            power_actions::restart_system
+            power_actions::restart_system,
+            disk_utils::get_lsblk_json
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
