@@ -1,10 +1,11 @@
+use serde::Serialize;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 use std::str;
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn get_lsblk_json(device: &str) -> Result<Value, String> {
@@ -17,13 +18,9 @@ pub fn get_lsblk_json(device: &str) -> Result<Value, String> {
         .arg(device)
         .output()
         .map_err(|e| format!("Failed to run lsblk: {}", e))?;
-    
-    println!("[DEBUG] lsblk příkaz skončil, status: {:?}", output.status);
-    println!("[DEBUG] lsblk raw output: {}", String::from_utf8_lossy(&output.stdout));
-    
+
     let json: Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| format!("Failed to parse lsblk JSON: {}", e))?;
-    println!("[DEBUG] Parsovaný JSON z lsblk: {:#?}", json);
     Ok(json)
 }
 
@@ -84,7 +81,10 @@ pub fn get_mountpoint_for_interface(device: &str) -> Option<String> {
     }
     // Pokud není, projdeme oddíly ("children")
     if let Some(children) = devices[0]["children"].as_array() {
-        println!("[DEBUG] Nalezeno {} oddílů, prohledávám je...", children.len());
+        println!(
+            "[DEBUG] Nalezeno {} oddílů, prohledávám je...",
+            children.len()
+        );
         for child in children {
             if let Some(mp) = child["mountpoint"].as_str() {
                 println!("[DEBUG] Oddíl má mountpoint: {}", mp);
@@ -112,7 +112,7 @@ pub fn get_mountpoint_for_interface(device: &str) -> Option<String> {
 }
 
 /// Informace o oddílu.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct PartitionInfo {
     pub index: usize,
     pub start_sector: u64,
@@ -122,10 +122,11 @@ pub struct PartitionInfo {
 }
 
 /// Struktura s informacemi o disku.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct DiskInfo {
     pub serial: String,
     pub capacity_bytes: u64,
+    pub logical_sector_size: u64,
     pub partitions: Vec<PartitionInfo>,
     pub disk_encryption: Option<String>,
     pub has_hpa: bool,
@@ -146,7 +147,10 @@ fn detect_encryption(device: &str) -> Option<String> {
         for child in children {
             if let Some(fstype) = child["fstype"].as_str() {
                 let fstype_lc = fstype.to_lowercase();
-                if fstype_lc.contains("bitlocker") || fstype_lc.contains("luks") || fstype_lc.contains("dm-crypt") {
+                if fstype_lc.contains("bitlocker")
+                    || fstype_lc.contains("luks")
+                    || fstype_lc.contains("dm-crypt")
+                {
                     return Some(fstype.to_string());
                 }
             }
@@ -164,7 +168,12 @@ pub fn detect_hpa_dco(device: &str) -> (Option<bool>, Option<bool>) {
     let mut has_dco: Option<bool> = None;
 
     // Detekce HPA
-    if let Ok(output) = Command::new("sudo").arg("hdparm").arg("-N").arg(device).output() {
+    if let Ok(output) = Command::new("sudo")
+        .arg("hdparm")
+        .arg("-N")
+        .arg(device)
+        .output()
+    {
         let stdout = String::from_utf8_lossy(&output.stdout);
         if stdout.contains("missing sense data") || stdout.contains("bad sense data") {
             has_hpa = None;
@@ -188,8 +197,7 @@ pub fn detect_hpa_dco(device: &str) -> (Option<bool>, Option<bool>) {
             || stdout.contains("Real max sectors: 1")
         {
             has_dco = None;
-        } else if let Some(line) = stdout.lines().find(|l| l.contains("Real max sectors:"))
-        {
+        } else if let Some(line) = stdout.lines().find(|l| l.contains("Real max sectors:")) {
             if let Some(real_max_sectors_str) = line.split(':').nth(1) {
                 let real_max_sectors = real_max_sectors_str.trim().parse::<u64>().unwrap_or(0);
                 if let Ok(blockdev_output) = Command::new("sudo")
@@ -224,10 +232,18 @@ pub fn get_disk_info(device: &str) -> Result<DiskInfo, String> {
     }
     let disk = &devices[0];
 
-    let serial = disk["serial"].as_str().unwrap_or("UnknownSerial").to_string();
+    let serial = disk["serial"]
+        .as_str()
+        .unwrap_or("UnknownSerial")
+        .to_string();
+
     let capacity_bytes = disk["size"]
         .as_u64()
         .ok_or("Failed to parse disk size")?;
+
+    let logical_sector_size = disk["log-sec"]
+        .as_u64()
+        .ok_or("Failed to parse logical sector size")?;
 
     let mut partitions = Vec::new();
     if let Some(children) = disk["children"].as_array() {
@@ -243,7 +259,9 @@ pub fn get_disk_info(device: &str) -> Result<DiskInfo, String> {
                 .as_ref()
                 .map(|fs| {
                     let fs_lc = fs.to_lowercase();
-                    fs_lc.contains("bitlocker") || fs_lc.contains("luks") || fs_lc.contains("dm-crypt")
+                    fs_lc.contains("bitlocker")
+                        || fs_lc.contains("luks")
+                        || fs_lc.contains("dm-crypt")
                 })
                 .unwrap_or(false);
             let end_sector = if part_size > 0 {
@@ -267,6 +285,7 @@ pub fn get_disk_info(device: &str) -> Result<DiskInfo, String> {
     Ok(DiskInfo {
         serial,
         capacity_bytes,
+        logical_sector_size,
         partitions,
         disk_encryption,
         has_hpa: has_hpa.unwrap_or(false),

@@ -4,7 +4,6 @@ use tauri_plugin_shell::init as shell_init;
 mod copy_configs;
 mod dashboard_layout;
 mod db;
-mod disk_info;
 mod disk_manager;
 mod ewfacquire;
 mod dcfldd;
@@ -16,6 +15,7 @@ mod report;
 mod led;
 mod disk_utils;
 mod config;
+mod lockscreen;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -48,6 +48,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Konec TEST
 
+    // report::generate_report(1)?;
+
     Builder::default()
         .plugin(websocket_init())
         .plugin(shell_init())
@@ -58,8 +60,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             initial_setup::check_integrity,
             dashboard_layout::get_device_status,
             websocket::start_websocket_server,
-            disk_info::get_usb_device_details,
-            disk_info::get_hdd_details,
             copy_configs::save_new_ewf_config,
             copy_configs::get_all_active_configs,
             copy_configs::delete_or_deactivate_config,
@@ -69,7 +69,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             disk_manager::get_directory_contents,
             power_actions::shutdown_system,
             power_actions::restart_system,
-            disk_utils::get_lsblk_json
+            disk_utils::get_lsblk_json,
+            lockscreen::lock_system,
+            lockscreen::unlock_system,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

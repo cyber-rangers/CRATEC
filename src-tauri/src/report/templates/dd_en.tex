@@ -53,6 +53,8 @@ Time at Completion: & {{ time_complete }} \\
 \vspace{1em}
 \section*{Hash Information}
 \begin{tabular}{@{}ll}
+LBA Count: & {{ hash_lba_count }} \\
+Sector Size: & {{ hash_sector_size }} \\
 Hash Type: & {{ hash_primary_type }} \\
 Source Hash: & {{ hash_primary }} \\
 Secondary Hash Type: & {{ hash_secondary_type }} \\
@@ -62,8 +64,8 @@ Secondary Source Hash: & {{ hash_secondary }} \\
 \vspace{1em}
 \section*{Case Information}
 \begin{tabular}{@{}ll}
-Case number/File Name: & {{ case_number }} \\
-Evidence number: & {{ evidence_number }} \\
+Case/File Name: & {{ case_file }} \\
+Case ID: & {{ case_id }} \\
 Examiner: & {{ examiner }} \\
 Case Notes: & {{ notes }} \\
 \end{tabular}
