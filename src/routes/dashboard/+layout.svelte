@@ -62,21 +62,30 @@
 
 	onMount(async () => {
 		try {
+			console.log('Zahajuji navazování websocket spojení...');
 			const wsAddr = await invoke<string>('start_websocket_server');
 			console.log('Websocket server spuštěn na:', wsAddr);
+
 			ws = await WebSocket.connect(wsAddr);
+			console.log('Websocket connect() dokončeno, nastavujeme listener...');
+
 			ws.addListener((msg) => {
+				console.log('Listener spuštěn, příchozí zpráva:', msg);
 				try {
 					let jsonStr: string;
 					if (typeof msg === 'string') {
+						console.log('Zpráva je typu string:', msg);
 						jsonStr = msg;
 					} else if (msg.data) {
+						console.log('Zpráva obsahuje msg.data:', msg.data);
 						jsonStr = String(msg.data);
 					} else {
 						console.error('Neplatný formát zprávy:', msg);
 						return;
 					}
+
 					const update = JSON.parse(jsonStr);
+					console.log('Parsovaný objekt:', update);
 
 					if (update.type === 'ProcessFull') {
 						console.log('ProcessFull update:', update);
@@ -133,7 +142,6 @@
 							});
 						});
 					} else if (update.type === 'ProcessDone') {
-						// Přidáno nové zpracování zprávy ProcessDone
 						console.log('ProcessDone update:', update);
 						runningProcessesStore.update((processes) => {
 							const processId = update.id.toString();
@@ -160,6 +168,8 @@
 					console.error('Chyba při parsování zprávy:', e);
 				}
 			});
+
+			console.log('Listener nastaven, čekám na zprávy...');
 		} catch (error) {
 			console.error('Chyba při navazování websocket spojení:', error);
 		}

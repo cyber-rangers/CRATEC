@@ -23,7 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The function now gets its own connection from the pool
     db::initialize_db()?;
 
-    //TEST
+   /*  //TEST
     let device = "/dev/sda";
 
     // Test funkce detect_hpa_dco
@@ -46,9 +46,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Failed to get disk info: {}", e);
         }
     }
-    // Konec TEST
+    // Konec TEST */
 
-    // report::generate_report(1)?;
+    //report::generate_report(1)?;
 
     Builder::default()
         .plugin(websocket_init())

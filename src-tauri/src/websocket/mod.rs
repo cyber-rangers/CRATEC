@@ -74,7 +74,6 @@ async fn accept_loop(addr: String, clients: Arc<Mutex<Vec<tokio_tungstenite::Web
 /// Broadcast loop: každé 2 sekundy získá aktuální stav (full update) a odešle ho všem klientům.
 async fn broadcast_loop(clients: Arc<Mutex<Vec<tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>>>>) {
     loop {
-        // Získáme aktuální stav – předpokládáme, že get_device_status() vrací např. strukturu DeviceStatus
         let current_status = match get_device_status() {
             Ok(status) => status,
             Err(e) => {
@@ -84,35 +83,44 @@ async fn broadcast_loop(clients: Arc<Mutex<Vec<tokio_tungstenite::WebSocketStrea
             }
         };
 
-        // Vytvoříme JSON objekt se zadaným typem "Status" místo "Full"
         let status_update = json!({
             "type": "Status",
             "data": current_status
         });
-
-        // Serializujeme zprávu
         let json_str = status_update.to_string();
-        
-        // Důležité: Držíme lock jen po dobu odeslání zpráv
+
+        // Výpis do konzole o připravovaných datech k odeslání
+        println!("Broadcast loop: připravuji odeslání zprávy: {}", json_str);
+
         {
             let mut clients_lock = clients.lock().await;
             let mut indices_to_remove = Vec::new();
+
+            // Zkusíme odeslat všem připojeným klientům
             for (i, client) in clients_lock.iter_mut().enumerate() {
-                if let Err(e) = client.send(Message::Text(json_str.clone().into())).await {
-                    eprintln!("Error sending update: {}", e);
-                    indices_to_remove.push(i);
+                match client.send(Message::Text(json_str.clone().into())).await {
+                    Ok(_) => {
+                        // Pokud se podaří odeslat, dáme o tom vědět do konzole
+                        println!("Zpráva úspěšně odeslána klientovi #{}", i);
+                    }
+                    Err(e) => {
+                        eprintln!("Error sending update to klient #{}: {}", i, e);
+                        indices_to_remove.push(i);
+                    }
                 }
             }
-            // Odstraníme klienty, u kterých odeslání selhalo
+
             for i in indices_to_remove.iter().rev() {
+                println!("Odstranění odpojeného klienta #{}", i);
                 clients_lock.remove(*i);
             }
-        } // Lock je zde uvolněn, když clients_lock jde mimo scope
-        
-        // Spánek probíhá až po uvolnění zámku
+        }
+
+        // Po odeslání všem klientům počkáme 2 sekundy
         sleep(Duration::from_secs(2)).await;
     }
 }
+
 /// Funkce, kterou můžete volat z jiných modulů pro odeslání libovolné zprávy.
 pub async fn broadcast_message(msg: &str) {
     let clients = CLIENTS.clone();

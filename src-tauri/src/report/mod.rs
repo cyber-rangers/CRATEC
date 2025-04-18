@@ -61,8 +61,8 @@ pub fn mock_data_report() -> Result<(), String> {
     context.insert("compression", "None");
     context.insert("hash_enabled", &true);
     context.insert("verify_hash", &false);
-    context.insert("unlock_hpa", &true);
-    context.insert("unlock_dco", &true);
+    context.insert("unlock_hpa", &false);
+    context.insert("unlock_dco", &false);
     context.insert("granularity", "SUCCESS");
     context.insert("result", "SUCCESS");
     context.insert("duration", "00:47:20");
@@ -335,21 +335,61 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
         .unwrap_or(0);
     context.insert("sector_size", &sector_size_val);
 
-    context.insert("segment_size", "WholeDisk");
+    let segment_size = report
+        .get("config_record")
+        .and_then(|config| config.get("segment_size"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("N/A");
+    context.insert("segment_size", segment_size);
 
     // místo pevného "compression"
-    let compression = report
+    let compression_method = report
+        .get("config_record")
+        .and_then(|cfg| cfg.get("compression_method"))
+        .and_then(Value::as_str)
+        .unwrap_or("None");
+    context.insert("compression_method", compression_method);
+
+    let compression_level = report
         .get("config_record")
         .and_then(|cfg| cfg.get("compression_level"))
         .and_then(Value::as_str)
         .unwrap_or("None");
-    context.insert("compression", compression);
+    context.insert("compression_level", compression_level);
 
-    context.insert("hash_enabled", &true);
+    let ewf_format = report
+        .get("config_record")
+        .and_then(|cfg| cfg.get("ewf_format"))
+        .and_then(Value::as_str)
+        .unwrap_or("N/A");
+    context.insert("ewf_format", ewf_format);
+
+
+    let hash_enabled = if hash_types != "N/A" && !hash_types.trim().is_empty() {
+        true
+    } else {
+        false
+    };
+    context.insert("hash_enabled", &hash_enabled);
+
     context.insert("verify_hash", &false);
-    context.insert("unlock_hpa", &true);
-    context.insert("unlock_dco", &true);
-    context.insert("granularity", "SUCCESS");
+    context.insert("unlock_hpa", &false);
+    context.insert("unlock_dco", &false);
+    
+    let granularity_sectors = report
+        .get("config_record")
+        .and_then(|cfg| cfg.get("granularity_sectors"))
+        .and_then(Value::as_str)
+        .unwrap_or("N/A");
+    context.insert("granularity_sectors", granularity_sectors);
+
+    let swap_byte_pairs = report
+        .get("config_record")
+        .and_then(|cfg| cfg.get("swap_byte_pairs"))
+        .and_then(Value::as_str)
+        .unwrap_or("N/A");
+    context.insert("swap_byte_pairs", swap_byte_pairs);
+    
 
     // místo pevného "result"
     let result = report
@@ -378,12 +418,20 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
     context.insert("case_file", "CaseFile\\_001");
 
     // místo pevného "case_id"
-    let case_id = report
+    let case_number = report
         .get("log_record")
         .and_then(|lr| lr.get("case_number"))
         .and_then(Value::as_str)
         .unwrap_or("");
-    context.insert("case_id", case_id);
+    context.insert("case_number", case_number);
+
+    let evidence_number = report
+        .get("log_record")
+        .and_then(|lr| lr.get("evidence_number"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    context.insert("evidence_number", evidence_number);
+
 
     // místo pevného "examiner"
     let examiner = report
