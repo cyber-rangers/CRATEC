@@ -159,6 +159,8 @@ fn detect_encryption(device: &str) -> Option<String> {
     None
 }
 
+
+
 /// Detekce HPA a DCO pomocí příkazů hdparm a blockdev.
 /// Vrací dvojici: (Option<bool> pro HPA, Option<bool> pro DCO).
 /// Pokud výstup obsahuje "missing sense data", "bad sense data" nebo "Real max sectors: 1",

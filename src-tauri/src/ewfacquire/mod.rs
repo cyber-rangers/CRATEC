@@ -15,7 +15,6 @@ use tauri_plugin_shell::ShellExt;
 
 use tauri_plugin_shell::process::CommandEvent;
 
-
 /// Pomocná funkce pro provádění DB operací s opakovaným pokusem.
 fn execute_with_retry<T, F>(operation_name: &str, mut f: F, max_retries: usize) -> Result<T, String>
 where
@@ -161,27 +160,25 @@ pub async fn run_ewfacquire(
     app_handle: tauri::AppHandle,
     config_id: i32,
     ewf_params: EwfParams,
+    // Passed in as "/dev/disk/by-path/pci-0000:..."
     input_interface: String,
-    // Změna parametru pro podporu více výstupních disků
+    // Passed in similarly as ["/dev/disk/by-path/...", ...]
     output_interfaces: Vec<String>,
 ) -> Result<(), String> {
-    // Notifikujeme o začátku procesu
     LED_CONTROLLER.notify_process_start();
 
-    let actual_input_device = format!("/dev/disk/by-path/{}", input_interface);
+    // We use these full paths only for mountpoint lookups
+    let actual_input_device = format!("/dev/disk/by-path/{}", strip_dev_prefix(&input_interface));
 
-    // Zkontrolujeme, že máme alespoň jeden výstupní disk
     if output_interfaces.is_empty() {
         return Err("(run_ewfacquire) No output disks provided!".to_string());
     }
-
-    // První disk - vytvoříme kopii hodnoty místo reference
-    let first_output = format!("/dev/disk/by-path/{}", output_interfaces[0]);
+    let first_output = format!("/dev/disk/by-path/{}", strip_dev_prefix(&output_interfaces[0]));
     let actual_output_mount = match get_mountpoint_for_interface(&first_output) {
-        Some(m) => m,
+        Some(mounted) => mounted,
         None => {
             let err = format!(
-                "(run_ewfacquire) Nepodařilo se najít mountpoint pro /dev/disk/by-path/{}",
+                "(run_ewfacquire) Nepodařilo se najít mountpoint pro {}",
                 first_output
             );
             log_error(&err);
@@ -189,11 +186,10 @@ pub async fn run_ewfacquire(
         }
     };
 
-    // Druhý disk - zpracujeme pouze pokud existuje
     let second_output_mount = if output_interfaces.len() > 1 {
-        let second_output = format!("/dev/disk/by-path/{}", output_interfaces[1]);
+        let second_output = format!("/dev/disk/by-path/{}", strip_dev_prefix(&output_interfaces[1]));
         match get_mountpoint_for_interface(&second_output) {
-            Some(m) => Some(m),
+            Some(mounted) => Some(mounted),
             None => {
                 let err = format!(
                     "(run_ewfacquire) Nepodařilo se najít mountpoint pro {}",
@@ -207,15 +203,18 @@ pub async fn run_ewfacquire(
         None
     };
 
-    // Klon parametrů pro databázovou operaci
+    // Clone EWF params for DB usage
     let ewf_params_db = ewf_params.clone();
 
-    // Clone input_interface for later use in the query
-    let input_interface_clone = input_interface.clone();
-    // Also clone first_output for later use
-    let first_output_clone = first_output.clone();
+    // Prepare stripped interface paths (without "/dev/disk/by-path/") for DB lookup
+    let input_raw = strip_dev_prefix(&input_interface);
+    let first_output_raw = strip_dev_prefix(&output_interfaces[0]);
+    let output_interfaces_raw = output_interfaces
+        .iter()
+        .map(|path| strip_dev_prefix(path))
+        .collect::<Vec<_>>();
 
-    // Pro DB použijeme pouze první výstupní disk (jako dříve)
+    // Retrieve EWF config and insert copy log
     let (config, process_id) =
         tauri::async_runtime::spawn_blocking(move || -> Result<(EwfConfig, i64), String> {
             let mut conn = execute_with_retry(
@@ -233,16 +232,17 @@ pub async fn run_ewfacquire(
                 .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
                 .map_err(|e| format!("(DB) Chyba při zahájení transakce: {}", e))?;
 
+            // 1) Load config
             let config = {
                 let mut stmt = tx
                     .prepare(
                         "SELECT confname, codepage, sectors_per_read, bytes_to_read,
-                     compression_method, compression_level, hash_types, ewf_format,
-                     granularity_sectors, notes, offset, process_buffer_size,
-                     bytes_per_sector, read_retry_count, swap_byte_pairs,
-                     segment_size, zero_on_read_error, use_chunk_data
-                     FROM ewf_config
-                     WHERE id = ?1 AND active = 1",
+                         compression_method, compression_level, hash_types, ewf_format,
+                         granularity_sectors, notes, offset, process_buffer_size,
+                         bytes_per_sector, read_retry_count, swap_byte_pairs,
+                         segment_size, zero_on_read_error, use_chunk_data
+                         FROM ewf_config
+                         WHERE id = ?1 AND active = 1",
                     )
                     .map_err(|e| format!("(DB) Chyba při přípravě SQL dotazu: {}", e))?;
 
@@ -271,55 +271,97 @@ pub async fn run_ewfacquire(
                 .map_err(|e| format!("(DB) Chyba při získávání konfigurace: {}", e))?
             };
 
-            // Vložíme nový záznam do copy_log_ewf pomocí parametrizovaného dotazu:
+            // 2) Find source & destination interface IDs from the 'interfaces' table
+            let source_disk_id: i64 = tx
+                .query_row(
+                    "SELECT id FROM interfaces WHERE interface_path = ?1 LIMIT 1",
+                    [input_raw.as_str()],
+                    |row| row.get(0),
+                )
+                .map_err(|_| {
+                    format!(
+                        "(DB) Nepodařilo se najít source disk v tabulce interfaces: {}",
+                        input_raw
+                    )
+                })?;
+
+            let first_output_id: i64 = tx
+                .query_row(
+                    "SELECT id FROM interfaces WHERE interface_path = ?1 LIMIT 1",
+                    [first_output_raw.as_str()],
+                    |row| row.get(0),
+                )
+                .map_err(|_| {
+                    format!(
+                        "(DB) Nepodařilo se najít first_output disk v tabulce interfaces: {}",
+                        first_output_raw
+                    )
+                })?;
+
+            let second_output_id = if output_interfaces_raw.len() > 1 {
+                let second_stripped = output_interfaces_raw[1].clone();
+                Some(
+                    tx.query_row(
+                        "SELECT id FROM interfaces WHERE interface_path = ?1 LIMIT 1",
+                        [second_stripped.as_str()],
+                        |row| row.get(0),
+                    )
+                    .map_err(|_| {
+                        format!(
+                            "(DB) Nepodařilo se najít second_output disk v tabulce interfaces: {}",
+                            second_stripped
+                        )
+                    })?,
+                )
+            } else {
+                None
+            };
+
+            // 3) Insert into copy_log_ewf
             tx.execute(
                 "INSERT INTO copy_log_ewf (
-                     config_id, 
-                     case_number, 
-                     description, 
-                     investigator_name, 
-                     evidence_number,
-                     source_disk_id, 
-                     dest_disk_id, 
-                     second_dest_disk_id,
-                     notes, 
-                     offset, 
-                     bytes_to_read, 
-                     start_datetime
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, DATETIME('now'))",
-                params![
+                    config_id,
+                    case_number,
+                    description,
+                    investigator_name,
+                    evidence_number,
+                    source_disk_id,
+                    dest_disk_id,
+                    second_dest_disk_id,
+                    notes,
+                    offset,
+                    bytes_to_read,
+                    start_datetime
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, DATETIME('now'))",
+                rusqlite::params![
                     config_id,
                     ewf_params_db.case_number.replace("'", "''"),
                     ewf_params_db.description.replace("'", "''"),
                     ewf_params_db.investigator_name.replace("'", "''"),
                     ewf_params_db.evidence_number.replace("'", "''"),
-                    input_interface.replace("'", "''"),
-                    first_output.replace("'", "''"),
-                    if output_interfaces.len() > 1 {
-                        output_interfaces[1].clone().replace("'", "''")
-                    } else {
-                        "".to_string()
-                    },
+                    source_disk_id,
+                    first_output_id,
+                    second_output_id.unwrap_or(0),
                     ewf_params_db.notes.replace("'", "''"),
                     ewf_params_db.offset,
                     ewf_params_db.bytes_to_read
                 ],
-            ).map_err(|e| format!("(DB) Chyba při zápisu do copy_log_ewf: {}", e))?;
+            )
+            .map_err(|e| format!("(DB) Chyba při zápisu do copy_log_ewf: {}", e))?;
 
-            // Získáme nově vložené copy_log_ewf id
             let copy_log_id = tx.last_insert_rowid();
 
-            // Vložíme záznam do copy_process, tentokrát použijeme copy_log_id jako triggered_by_ewf
+            // 4) Insert into copy_process
             let process_result = tx.execute(
                 "INSERT INTO copy_process (triggered_by_ewf) VALUES (?1)",
-                params![copy_log_id],
+                rusqlite::params![copy_log_id],
             );
             if let Err(e) = &process_result {
                 if e.to_string().contains("locked") || e.to_string().contains("busy") {
                     thread::sleep(Duration::from_secs(5));
                     tx.execute(
                         "INSERT INTO copy_process (triggered_by_ewf) VALUES (?1)",
-                        params![copy_log_id],
+                        rusqlite::params![copy_log_id],
                     )
                     .map_err(|e2| format!("(DB) Chyba při zápisu do copy_process: {}", e2))?;
                 } else {
@@ -335,12 +377,11 @@ pub async fn run_ewfacquire(
         .await
         .map_err(|e| format!("(async) Chyba při spawn_blocking: {}", e))??;
 
-    // Aktualizujeme destination_disks ve WsProcessUpdate
+    // Notify front-end that the acquisition started
     let mut destination_disks = vec![actual_output_mount.clone()];
     if let Some(second_mount) = &second_output_mount {
         destination_disks.push(second_mount.clone());
     }
-
     {
         let ws_update = WsProcessUpdate {
             msg_type: "ProcessFull".to_string(),
@@ -546,23 +587,17 @@ pub async fn run_ewfacquire(
     let mut md5_hash: Option<String> = None;
     let mut sha1_hash: Option<String> = None;
     let mut sha256_hash: Option<String> = None;
-    let copy_log_id: i64; // Add this to capture the copy_log_id from the DB
 
-    // Get the copy_log_id for the current process
-    copy_log_id = {
+    // Získání copy_log_id přes copy_process.triggered_by_ewf:
+    let copy_log_id: i64 = {
         let conn = crate::db::create_new_connection()
             .map_err(|e| format!("Failed to create connection: {}", e))?;
         conn.query_row(
-            "SELECT id FROM copy_log_ewf 
-             WHERE dest_disk_id = ?1 AND source_disk_id = ?2
-             ORDER BY id DESC LIMIT 1",
-            params![
-                first_output_clone.replace("'", "''"),
-                input_interface_clone.replace("'", "''")
-            ],
+            "SELECT triggered_by_ewf FROM copy_process WHERE id = ?1",
+            params![process_id],
             |row| row.get(0),
         )
-        .map_err(|e| format!("Failed to get copy_log_id: {}", e))?
+        .map_err(|e| format!("Failed to get copy_log_id from copy_process: {}", e))?
     };
 
     while let Some(event) = rx.recv().await {
@@ -759,4 +794,12 @@ pub async fn run_ewfacquire(
     }
 
     Ok(())
+}
+
+/// Utility function that strips "/dev/disk/by-path/" prefix from path
+/// so we can find the raw interface
+fn strip_dev_prefix(full_path: &str) -> String {
+    full_path
+        .trim_start_matches("/dev/disk/by-path/")
+        .to_string()
 }

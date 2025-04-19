@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //report::generate_report(1)?;
 
     Builder::default()
-        .plugin(websocket_init())
+        .plugin(tauri_plugin_websocket::init())
         .plugin(shell_init())
         .invoke_handler(tauri::generate_handler![
             initial_setup::find_file,

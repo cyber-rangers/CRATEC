@@ -1,7 +1,6 @@
 use rusqlite::{Connection, Result};
 
 pub fn initialize_copy_log_scheme(conn: &Connection) -> Result<()> {
-    // Vytvoření tabulky copy_log (proměnlivá nastavení)
     conn.execute(
         r#"CREATE TABLE IF NOT EXISTS copy_log_ewf (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -22,13 +21,21 @@ pub fn initialize_copy_log_scheme(conn: &Connection) -> Result<()> {
             end_datetime DATETIME,
             status TEXT NOT NULL DEFAULT 'running'
                 CHECK(status IN ('running','done','error')),
-            source_disk_id INTEGER,
-            dest_disk_id TEXT NOT NULL,
-            second_dest_disk_id TEXT,
+            source_disk_id INTEGER NOT NULL,
+            dest_disk_id INTEGER NOT NULL,
+            second_dest_disk_id INTEGER,
             md5_hash TEXT DEFAULT NULL, 
             sha1_hash TEXT DEFAULT NULL,
             sha256_hash TEXT DEFAULT NULL,
-            FOREIGN KEY(config_id) REFERENCES ewf_config(id) ON DELETE CASCADE
+            FOREIGN KEY(config_id) REFERENCES ewf_config(id) ON DELETE CASCADE,
+            FOREIGN KEY(source_disk_id) REFERENCES interface(id) ON DELETE CASCADE,
+            FOREIGN KEY(dest_disk_id) REFERENCES interface(id) ON DELETE CASCADE,
+            FOREIGN KEY(second_dest_disk_id) REFERENCES interface(id) ON DELETE CASCADE,
+            CHECK(
+                source_disk_id != dest_disk_id
+                AND (second_dest_disk_id IS NULL OR second_dest_disk_id != source_disk_id)
+                AND (second_dest_disk_id IS NULL OR second_dest_disk_id != dest_disk_id)
+            )
         )"#,
         [],
     )?;
@@ -48,17 +55,25 @@ pub fn initialize_copy_log_scheme(conn: &Connection) -> Result<()> {
             end_datetime DATETIME,
             status TEXT NOT NULL DEFAULT 'running'
                 CHECK(status IN ('running','done','error')),
-            source_disk_id INTEGER,
-            dest_disk_id TEXT NOT NULL,
-            second_dest_disk_id TEXT,
+            source_disk_id INTEGER NOT NULL,
+            dest_disk_id INTEGER NOT NULL,
+            second_dest_disk_id INTEGER,
             limit_value TEXT,
             offset TEXT DEFAULT NULL,
-            md5_hash TEXT DEFAULT NULL, 
+            md5_hash TEXT DEFAULT NULL,
             sha1_hash TEXT DEFAULT NULL,
             sha256_hash TEXT DEFAULT NULL,
             sha384_hash TEXT DEFAULT NULL,
             sha512_hash TEXT DEFAULT NULL,
-            FOREIGN KEY(config_id) REFERENCES dd_config(id) ON DELETE CASCADE
+            FOREIGN KEY(config_id) REFERENCES dd_config(id) ON DELETE CASCADE,
+            FOREIGN KEY(source_disk_id) REFERENCES interface(id) ON DELETE CASCADE,
+            FOREIGN KEY(dest_disk_id) REFERENCES interface(id) ON DELETE CASCADE,
+            FOREIGN KEY(second_dest_disk_id) REFERENCES interface(id) ON DELETE CASCADE,
+            CHECK(
+                source_disk_id != dest_disk_id
+                AND (second_dest_disk_id IS NULL OR second_dest_disk_id != source_disk_id)
+                AND (second_dest_disk_id IS NULL OR second_dest_disk_id != dest_disk_id)
+            )
         )"#,
         [],
     )?;

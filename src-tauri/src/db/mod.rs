@@ -244,7 +244,12 @@ pub fn initialize_db() -> Result<(), Box<dyn Error>> {
         copy_log_scheme::initialize_copy_log_scheme(conn)?;
         interface_scheme::initialize_interface_scheme(conn)?;
         process_log_scheme::initialize_process_log_scheme(conn)?;
-        
+
+        // Nastav všechny záznamy, které mají status = running, na error
+        conn.execute("UPDATE copy_log_ewf SET status='error' WHERE status='running'", [])?;
+        conn.execute("UPDATE copy_log_dd SET status='error' WHERE status='running'", [])?;
+        conn.execute("UPDATE copy_process SET status='error' WHERE status='running'", [])?;
+
         Ok(())
     })?;
     

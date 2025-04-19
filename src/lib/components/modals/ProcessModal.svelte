@@ -65,6 +65,15 @@
 	backdropClasses="backdrop-blur-sm"
 >
 	{#snippet content()}
+		<!-- Přidáno plovoucí zavírací tlačítko vpravo nahoře -->
+		<button 
+			type="button" 
+			class="absolute top-6 right-6 btn  preset-filled-surface-500 rounded-full w-10 h-10 p-0 flex items-center justify-center z-50"
+			on:click={modalClose}
+			title="Zavřít"
+		>
+			<X size={20} />
+		</button>
 		{#if $runningProcessesStore.length === 0}
 			<p class="text-center">Žádné aktivní procesy.</p>
 		{:else}
@@ -81,7 +90,13 @@
 							</div>
 						</div>
 						<div class="w-1/3 text-center">
-							<p>{process.speed.toFixed(1)} MiB/s</p>
+								<p>
+									{#if process.progress_perc === 100 && process.status === 'done'}
+										N/A
+									{:else}
+										{process.speed.toFixed(1)} MiB/s
+									{/if}
+								</p>
 						</div>
 						<div class="flex w-1/3 items-center justify-end gap-2 pr-4 text-right">
 							<CirclePause />
@@ -145,14 +160,17 @@
 								{process.progress_perc}%
 							</Progress>
 						</div>
-						<p class="ml-4 text-xs">{formatTime(process.progress_time)}</p>
+						<p class="ml-4 text-xs">
+							{#if process.progress_perc === 100 && process.status === 'done'}
+								N/A
+							{:else}
+								{formatTime(process.progress_time)}
+							{/if}
+						</p>
 					</div>
 				</div>
 			{/each}
 		{/if}
-		<footer class="mt-4 flex justify-end gap-4">
-			<button type="button" class="btn preset-tonal" on:click={modalClose}>Close</button>
-		</footer>
 	{/snippet}
 </Modal>
 
