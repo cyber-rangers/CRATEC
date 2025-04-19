@@ -16,6 +16,7 @@ mod led;
 mod disk_utils;
 mod config;
 mod lockscreen;
+mod history;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -72,6 +73,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             disk_utils::get_lsblk_json,
             lockscreen::lock_system,
             lockscreen::unlock_system,
+            history::get_history,
+            history::get_config_entry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

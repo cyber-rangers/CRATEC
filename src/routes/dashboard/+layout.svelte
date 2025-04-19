@@ -184,7 +184,7 @@
             <Navigation.Tile label="Správce" href="/dashboard/disk_manager">
                 <FolderOpen />
             </Navigation.Tile>
-            <Navigation.Tile label="Historie" href="/dashboard">
+            <Navigation.Tile label="Historie" href="/dashboard/history">
                 <History />
             </Navigation.Tile>
             <Navigation.Tile label="Konfigurace" href="/dashboard/pre_configs">

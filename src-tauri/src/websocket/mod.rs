@@ -89,9 +89,6 @@ async fn broadcast_loop(clients: Arc<Mutex<Vec<tokio_tungstenite::WebSocketStrea
         });
         let json_str = status_update.to_string();
 
-        // Výpis do konzole o připravovaných datech k odeslání
-        println!("Broadcast loop: připravuji odeslání zprávy: {}", json_str);
-
         {
             let mut clients_lock = clients.lock().await;
             let mut indices_to_remove = Vec::new();
@@ -100,8 +97,7 @@ async fn broadcast_loop(clients: Arc<Mutex<Vec<tokio_tungstenite::WebSocketStrea
             for (i, client) in clients_lock.iter_mut().enumerate() {
                 match client.send(Message::Text(json_str.clone().into())).await {
                     Ok(_) => {
-                        // Pokud se podaří odeslat, dáme o tom vědět do konzole
-                        println!("Zpráva úspěšně odeslána klientovi #{}", i);
+                      
                     }
                     Err(e) => {
                         eprintln!("Error sending update to klient #{}: {}", i, e);

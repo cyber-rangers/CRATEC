@@ -107,6 +107,13 @@ where
     ))
 }
 
+// Pomocná funkce pro odstranění prefixu "/dev/disk/by-path/"
+fn strip_dev_prefix(full_path: &str) -> String {
+    full_path
+        .trim_start_matches("/dev/disk/by-path/")
+        .to_string()
+}
+
 /// Tauri příkaz pro spuštění dcfldd, analogicky k run_ewfacquire.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn run_dcfldd(
@@ -117,6 +124,10 @@ pub async fn run_dcfldd(
     output_interfaces: Vec<String>,
 ) -> Result<(), String> {
     LED_CONTROLLER.notify_process_start();
+
+    // Připravíme stripped cesty pro DB lookup
+    let input_raw = strip_dev_prefix(&input_interface);
+    let output_raws: Vec<String> = output_interfaces.iter().map(|p| strip_dev_prefix(p)).collect();
 
     // Vstupní zařízení
     let actual_input_device = format!("/dev/disk/by-path/{}", input_interface);
@@ -158,10 +169,8 @@ pub async fn run_dcfldd(
     };
 
     let dd_params_db = dd_params.clone();
-    let input_interface_clone = input_interface.clone();
-    let first_output_clone = first_output.clone();
 
-    // Create a struct to hold all configuration parameters
+    // DB lookup na ID disků podle interface_path a INSERT do copy_log_dd
     #[derive(Debug)]
     struct DdConfigComplete {
         confname: String,
@@ -197,9 +206,9 @@ pub async fn run_dcfldd(
                 let mut stmt = conn
                     .prepare(
                         "SELECT confname, format, limit_mode, offset, hash_types, 
-                     hashwindow, split, vf, diffwr, notes
-                     FROM dd_config
-                     WHERE id = ?1 AND active = 1",
+                         hashwindow, split, vf, diffwr, notes
+                         FROM dd_config
+                         WHERE id = ?1 AND active = 1",
                     )
                     .map_err(|e| format!("(DB) Chyba při přípravě SQL dotazu: {}", e))?;
 
@@ -220,43 +229,83 @@ pub async fn run_dcfldd(
                 .map_err(|e| format!("(DB) Chyba při získávání konfigurace: {}", e))?
             };
 
-            // Zahájení transakce
+            // Najdi ID source disku v tabulce `interfaces`, ve sloupci `interface_path`
+            let source_disk_id: i64 = conn
+                .query_row(
+                    "SELECT id FROM interface WHERE interface_path = ?1 LIMIT 1",
+                    [input_raw.as_str()],
+                    |row| row.get(0),
+                )
+                .map_err(|_| {
+                    format!(
+                        "(DB) Nepodařilo se najít source disk v tabulce interfaces: {}",
+                        input_raw
+                    )
+                })?;
+
+            // První output
+            let first_output_id: i64 = conn
+                .query_row(
+                    "SELECT id FROM interface WHERE interface_path = ?1 LIMIT 1",
+                    [output_raws[0].as_str()],
+                    |row| row.get(0),
+                )
+                .map_err(|_| {
+                    format!(
+                        "(DB) Nepodařilo se najít first_output disk v tabulce interfaces: {}",
+                        output_raws[0]
+                    )
+                })?;
+
+            // (pokud máte druhý výstup)
+            let second_output_id: Option<i64> = if output_raws.len() > 1 {
+                Some(
+                    conn.query_row(
+                        "SELECT id FROM interface WHERE interface_path = ?1 LIMIT 1",
+                        [output_raws[1].as_str()],
+                        // explicitně načteme i64
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .map_err(|_| format!(
+                        "(DB) Nepodařilo se najít second_output disk v tabulce interfaces: {}",
+                        output_raws[1]
+                    ))?,
+                )
+            } else {
+                None
+            };
+
+            // Vlož do copy_log_dd se správnými ID disků
             let tx = conn
                 .transaction()
                 .map_err(|e| format!("(DB) Nelze zahájit transakci: {}", e))?;
 
-            // Vložení záznamu do copy_log_dd.
-            // Použijeme INSERT, který kromě ostatních sloupců zapisuje i second_dest_disk_id.
-            let insert_sql = format!(
+            tx.execute(
                 "INSERT INTO copy_log_dd (
-                config_id, source, case_number, description, investigator_name, 
-                evidence_number, notes, offset, limit_value, source_disk_id, 
-                dest_disk_id, second_dest_disk_id, start_datetime
-            ) VALUES ({},'{}','{}','{}','{}','{}','{}','{}','{}','{}','{}','{}',DATETIME('now'))",
-                config_id,
-                "dcfldd",
-                dd_params_db.case_number.replace("'", "''"),
-                dd_params_db.description.replace("'", "''"),
-                dd_params_db.investigator_name.replace("'", "''"),
-                dd_params_db.evidence_number.replace("'", "''"),
-                dd_params_db.notes.replace("'", "''"),
-                dd_params_db.offset,
-                dd_params_db.limit,
-                input_interface_clone.replace("'", "''"),
-                first_output_clone.replace("'", "''"),
-                if output_interfaces.len() > 1 {
-                    output_interfaces[1].clone().replace("'", "''")
-                } else {
-                    "".to_string()
-                }
-            );
-
-            tx.execute_batch(&insert_sql)
-                .map_err(|e| format!("(DB) Chyba při insertu copy_log_dd: {}", e))?;
+                    config_id, source, case_number, description, investigator_name, 
+                    evidence_number, notes, offset, limit_value, source_disk_id, 
+                    dest_disk_id, second_dest_disk_id, start_datetime
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, DATETIME('now'))",
+                rusqlite::params![
+                    config_id,
+                    "dcfldd",
+                    dd_params_db.case_number.replace("'", "''"),
+                    dd_params_db.description.replace("'", "''"),
+                    dd_params_db.investigator_name.replace("'", "''"),
+                    dd_params_db.evidence_number.replace("'", "''"),
+                    dd_params_db.notes.replace("'", "''"),
+                    dd_params_db.offset,
+                    dd_params_db.limit,
+                    source_disk_id,
+                    first_output_id,
+                    second_output_id  
+                ],
+            )
+            .map_err(|e| format!("(DB) Chyba při insertu copy_log_dd: {}", e))?;
 
             let copy_log_id = tx.last_insert_rowid();
 
-            // Vložíme záznam do copy_process; použijeme copy_log_id jako triggered_by_dd
+            // Ulož do copy_process
             tx.execute(
                 "INSERT INTO copy_process (triggered_by_dd) VALUES (?1)",
                 params![copy_log_id],

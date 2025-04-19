@@ -208,11 +208,6 @@ fn auto_mount(device: &str) -> Option<String> {
         for line in mounts.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 && parts[0] == device_to_mount {
-                log_debug(&format!(
-                    "Zařízení {} je již namountované na {}. Mount se neprovádí.",
-                    device_to_mount,
-                    parts[1]
-                ));
                 return Some(parts[1].to_string());
             }
         }
@@ -306,7 +301,7 @@ pub fn get_device_status() -> Result<DeviceStatus, String> {
     
     let interface_map: HashMap<String, (String, String)> = {
         let mut stmt = conn_guard
-            .prepare("SELECT interface_path, name, side FROM interfaces")
+            .prepare("SELECT interface_path, name, side FROM interface")
             .map_err(|e| {
                 log_error(&format!("Failed to prepare statement: {}", e));
                 format!("Failed to prepare statement: {}", e)

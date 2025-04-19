@@ -61,35 +61,33 @@
                     $lsblkDetails[disk.interface].blockdevices.length > 0}
                     {@const dev = $lsblkDetails[disk.interface].blockdevices[0]}
                     <div class="device-info">
-                        <p><strong>Name:</strong> {dev.name}</p>
+                        <p><strong>Jméno:</strong> {dev.name}</p>
                         <p><strong>Model:</strong> {dev.model || 'Unknown'}</p>
                         <p><strong>Serial:</strong> {dev.serial || 'Unknown'}</p>
-                        <p><strong>Size:</strong> {dev.size || 'Unknown'}</p>
-                        <p><strong>Type:</strong> {dev.type || 'Unknown'}</p>
+                        <p><strong>Velikost</strong> {dev.size || 'Unknown'}</p>
+                        <p><strong>Typ:</strong> {dev.type || 'Unknown'}</p>
                         <p><strong>Mountpoint:</strong> {dev.mountpoint || 'None'}</p>
-                        <p><strong>Path:</strong> {dev.path || 'Unknown'}</p>
-                        <p><strong>Owner:</strong> {dev.owner || 'Unknown'}</p>
+                        <p><strong>Cesta:</strong> {dev.path || 'Unknown'}</p>
                         <p><strong>Transport:</strong> {dev.tran || 'Unknown'}</p>
-                        <p><strong>Vendor:</strong> {dev.vendor || 'Unknown'}</p>
+                        <p><strong>Výrobce:</strong> {dev.vendor || 'Unknown'}</p>
                         <p><strong>HCTL:</strong> {dev.hctl || 'Unknown'}</p>
                         <p><strong>Disk Seq:</strong> {dev["disk-seq"] || 'Unknown'}</p>
                         <p><strong>Fstype:</strong> {dev.fstype || 'None'}</p>
-                        <p><strong>State:</strong> {dev.state || 'Unknown'}</p>
+                        <p><strong>Status:</strong> {dev.state || 'Unknown'}</p>
                         <p><strong>RA:</strong> {dev.ra || 'Unknown'}</p>
                     </div>
+                    <br />
                     {#if dev.children && dev.children.length > 0}
-                        <h3>Partitions:</h3>
+                        <h3>Oddíly:</h3>
                         {#each dev.children as part}
                             <div class="partition">
-                                <p><strong>Partition Name:</strong> {part.name}</p>
-                                <p><strong>Label:</strong> {part.label || 'None'}</p>
-                                <p><strong>Size:</strong> {part.size || 'Unknown'}</p>
-                                <p><strong>Filesystem:</strong> {part.fstype || 'Unknown'}</p>
+                                <p><strong>Jméno oddílu:</strong> {part.name}</p>
+                                <p><strong>Typ:</strong> {part.label || 'None'}</p>
+                                <p><strong>Velikost:</strong> {part.size || 'Unknown'}</p>
+                                <p><strong>Souborový systém:</strong> {part.fstype || 'Unknown'}</p>
                             </div>
                         {/each}
                     {/if}
-                    <!-- Kompletní JSON lsblk -->
-                    <pre>{JSON.stringify($lsblkDetails[disk.interface], null, 2)}</pre>
                 {:else}
                     <p>Loading disk information...</p>
                 {/if}

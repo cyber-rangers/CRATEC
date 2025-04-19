@@ -2,12 +2,12 @@
 	import { Modal, Progress } from '@skeletonlabs/skeleton-svelte';
 	import {
 		LoaderCircle,
-		CirclePlay,
-		CirclePause,
+		CircleX,
 		SquareCode,
 		Usb,
 		HardDrive,
 		CircleAlert,
+		CircleCheck,
 		X
 	} from 'lucide-svelte';
 	import { runningProcessesStore } from '$lib/stores/processStore';
@@ -83,15 +83,23 @@
 					<div class="top-section bg-surface-600 flex w-full rounded-t-lg py-4">
 						<div class="w-1/3 text-center">
 							<div class="flex items-center justify-center gap-2">
-								<p>Status: {process.status}</p>
-								{#if process.status === 'běží'}
-									<LoaderCircle class="animate-spin" />
-								{/if}
+									<p class="flex items-center gap-1">
+										Status: {process.status}
+										{#if process.status === 'running'}
+											<LoaderCircle class="animate-spin" />
+										{:else if process.status === 'error'}
+											<CircleAlert />
+										{:else if process.status === 'done'}
+											<CircleCheck />
+										{/if}
+									</p>
 							</div>
 						</div>
 						<div class="w-1/3 text-center">
 								<p>
-									{#if process.progress_perc === 100 && process.status === 'done'}
+									{#if process.status === 'error'}
+										N/A
+									{:else if process.progress_perc === 100 && process.status === 'done'}
 										N/A
 									{:else}
 										{process.speed.toFixed(1)} MiB/s
@@ -99,8 +107,7 @@
 								</p>
 						</div>
 						<div class="flex w-1/3 items-center justify-end gap-2 pr-4 text-right">
-							<CirclePause />
-							<CirclePlay />
+							<CircleX />
 							<!-- Kliknutím se otevře drawer a nastaví id procesu -->
 							<button on:click={() => openDrawerForProcess(process.id)}><SquareCode /></button>
 						</div>
@@ -156,12 +163,16 @@
 						class="bottom-section bg-surface-600 flex w-full items-center rounded-b-lg px-4 py-4"
 					>
 						<div class="flex-1">
-							<Progress value={process.progress_perc} max={100} meterBg="bg-primary-500">
-								{process.progress_perc}%
+							<Progress
+								value={process.status === 'error' ? 0 : process.progress_perc}
+								max={100}
+								meterBg="bg-primary-500"
+							>
+								{process.status === 'error' ? '0%' : `${process.progress_perc}%`}
 							</Progress>
 						</div>
 						<p class="ml-4 text-xs">
-							{#if process.progress_perc === 100 && process.status === 'done'}
+							{#if process.status === 'error' || (process.progress_perc === 100 && process.status === 'done')}
 								N/A
 							{:else}
 								{formatTime(process.progress_time)}

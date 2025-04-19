@@ -1,116 +1,109 @@
-use serde::{Serialize, Deserialize};
-use serde_json::{Map, Value, json};
-use rusqlite::{Connection, Row, Statement, params};
-use std::error::Error;
+use tauri::command;
+use serde_json::{Value, Map, json};
+use rusqlite::{params, Row, OptionalExtension};
+use crate::db::DB_POOL;
 
-/// Pomocná funkce, která z jedné řádky výsledku SQL a příslušného Statementu 
-/// vygeneruje dynamický JSON objekt se všemi sloupci.
-fn row_to_json(row: &Row, stmt: &Statement) -> serde_json::Value {
+/// Převod jednoho řádku na JSON objekt, používá předané názvy sloupců
+fn row_to_json(row: &Row, col_names: &[String]) -> Value {
     let mut obj = Map::new();
-    // Projdeme všechny sloupce v dotazu
-    for (i, name) in stmt.column_names().iter().enumerate() {
-        // Zkusíme získat hodnotu jako String (v jedné DB mohou být různá datová pole,
-        // ale pro ukázku budeme vše načítat jako text, příp. NATURAL je potřeba sladit s Vaším schématem)
-        let val: rusqlite::Result<String> = row.get(i);
-        let value: Value = match val {
-            Ok(s) => Value::String(s),
-            Err(_) => Value::Null,
-        };
-        obj.insert(name.to_string(), value);
+    for (i, name) in col_names.iter().enumerate() {
+        let v: Value = row.get::<_, Option<String>>(i)
+            .ok()
+            .flatten()
+            .map(Value::String)
+            .unwrap_or(Value::Null);
+        obj.insert(name.clone(), v);
     }
     Value::Object(obj)
 }
 
-/// Funkce, která dotáže `copy_process` a vrátí pole JSON objektů.
-/// Každý objekt bude obsahovat:
-/// - "process": celý záznam z `copy_process`
-/// - "logs": všechny řádky z `process_log_lines`
-/// - "ewf_log": pokud `triggered_by_ewf` není NULL, tak záznam z `copy_log_ewf`
-/// - "dd_log": pokud `triggered_by_dd` není NULL, tak záznam z `copy_log_dd`
-pub fn get_acquisition_history_json(conn: &Connection) -> Result<String, Box<dyn Error>> {
-    // 1) Dotaz na všechna pole z tabulky copy_process
-    let mut stmt_proc = conn.prepare("SELECT * FROM copy_process ORDER BY id DESC")?;
-    let rows = stmt_proc.query_map([], |row| {
-        // Převést row na dynamický JSON (všechna pole)
-        Ok(row_to_json(row, &stmt_proc))
-    })?;
-
-    let mut results = vec![];
-
-    // 2) Pro každý řádek copy_process vyhledat související záznamy
-    for process_value in rows {
-        let process_json = process_value?;
-
-        // process_id potřebujeme k vyhledání logů
-        // Přestože row_to_json z `copy_process` vrátil dynamický JSON, 
-        // musíme zajistit, že 'id' bylo text/číslo. Pokud je v DB integer, 
-        // bude vrácen jako string, proto ho zkusíme převést.
-        let process_id_opt = process_json
-            .get("id")
-            .and_then(|v| v.as_str())
-            .and_then(|s| s.parse::<i64>().ok());
-
-        // Získáme triggered_by_ewf a triggered_by_dd
-        let triggered_by_ewf_opt = process_json
-            .get("triggered_by_ewf")
-            .and_then(|v| v.as_str())
-            .and_then(|s| s.parse::<i64>().ok());
-
-        let triggered_by_dd_opt = process_json
-            .get("triggered_by_dd")
-            .and_then(|v| v.as_str())
-            .and_then(|s| s.parse::<i64>().ok());
-
-        // 3) Vyhledáme logy z process_log_lines
-        let mut logs_array = vec![];
-        if let Some(process_id) = process_id_opt {
-            let mut stmt_logs = conn.prepare("SELECT * FROM process_log_lines WHERE process_id = ? ORDER BY line_number ASC")?;
-            let log_iter = stmt_logs.query_map(params![process_id], |row| {
-                Ok(row_to_json(row, &stmt_logs))
-            })?;
-
-            for log_json in log_iter {
-                logs_array.push(log_json?);
-            }
-        }
-
-        // 4) Pokud je triggered_by_ewf, najdeme záznam v `copy_log_ewf`
-        let mut ewf_log: Option<Value> = None;
-        if let Some(eid) = triggered_by_ewf_opt {
-            let mut stmt_ewf = conn.prepare("SELECT * FROM copy_log_ewf WHERE id = ?")?;
-            let ewf_row = stmt_ewf.query_map(params![eid], |row| {
-                Ok(row_to_json(row, &stmt_ewf))
-            })?.next();
-
-            if let Some(Ok(val)) = ewf_row {
-                ewf_log = Some(val);
-            }
-        }
-
-        // 5) Pokud je triggered_by_dd, najdeme záznam v `copy_log_dd`
-        let mut dd_log: Option<Value> = None;
-        if let Some(did) = triggered_by_dd_opt {
-            let mut stmt_dd = conn.prepare("SELECT * FROM copy_log_dd WHERE id = ?")?;
-            let dd_row = stmt_dd.query_map(params![did], |row| {
-                Ok(row_to_json(row, &stmt_dd))
-            })?.next();
-
-            if let Some(Ok(val)) = dd_row {
-                dd_log = Some(val);
-            }
-        }
-
-        // Sestavíme výsledný objekt pro daný záznam
-        let item = json!({
-            "process": process_json,
-            "logs": logs_array,
-            "ewf_log": ewf_log.unwrap_or(Value::Null),
-            "dd_log": dd_log.unwrap_or(Value::Null),
-        });
-        results.push(item);
+/// Pomocná funkce pro získání i64 z Value (string nebo číslo)
+fn value_to_i64(val: &Value) -> Option<i64> {
+    match val {
+        Value::Number(n) => n.as_i64(),
+        Value::String(s) => s.parse::<i64>().ok(),
+        _ => None,
     }
+}
 
-    // 6) Výsledky jako JSON pole (pretty print)
-    let json_array = serde_json::to_string_pretty(&results)?;
-    Ok(json_array)
+/// Vrátí všechny záznamy copy_process a k nim odpovídající copy_log_ewf nebo copy_log_dd podle cizího klíče
+#[command(rename_all = "snake_case")]
+pub async fn get_history() -> Result<Value, String> {
+    let mut pooled = DB_POOL.get_connection().map_err(|e| e.to_string())?;
+    pooled.execute(|conn| {
+        let mut stmt = conn.prepare("SELECT * FROM copy_process ORDER BY id DESC")?;
+        let cols = stmt.column_names().iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let mut items = Vec::new();
+
+        let mut rows = stmt.query([])?;
+        while let Some(r) = rows.next()? {
+            let proc = row_to_json(r, &cols);
+
+            // Získej hodnoty cizích klíčů jako Option<i64>
+            let triggered_by_ewf = r.get::<_, Option<i64>>(cols.iter().position(|c| c == "triggered_by_ewf").unwrap()).ok().flatten();
+            let triggered_by_dd  = r.get::<_, Option<i64>>(cols.iter().position(|c| c == "triggered_by_dd").unwrap()).ok().flatten();
+
+            let mut copy_log = Value::Null;
+
+            if let Some(eid) = triggered_by_ewf {
+                let mut st = conn.prepare("SELECT * FROM copy_log_ewf WHERE id = ?1")?;
+                let log_cols = st.column_names().iter().map(|s| s.to_string()).collect::<Vec<_>>();
+                if let Some(log) = st.query_row(params![eid], |r| Ok(row_to_json(r, &log_cols))).optional()? {
+                    copy_log = log;
+                }
+            } else if let Some(did) = triggered_by_dd {
+                let mut st = conn.prepare("SELECT * FROM copy_log_dd WHERE id = ?1")?;
+                let log_cols = st.column_names().iter().map(|s| s.to_string()).collect::<Vec<_>>();
+                if let Some(log) = st.query_row(params![did], |r| Ok(row_to_json(r, &log_cols))).optional()? {
+                    copy_log = log;
+                }
+            }
+
+            items.push(json!({
+                "process": proc,
+                "copy_log": copy_log
+            }));
+        }
+
+        Ok(Value::Array(items))
+    }).map_err(|e| e.to_string())
+}
+
+/// 2) Vrátí všechny řádky z `process_log_lines` pro dané `process_id`
+#[command(rename_all = "snake_case")]
+pub async fn get_process_log_lines(process_id: i64) -> Result<Value, String> {
+    let mut pooled = DB_POOL.get_connection().map_err(|e| e.to_string())?;
+    pooled.execute(|conn| {
+        let mut st = conn.prepare(
+            "SELECT * FROM process_log_lines WHERE process_id = ?1 ORDER BY line_number ASC"
+        )?;
+        let cols = st.column_names().iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let mut lines = Vec::new();
+        let mut rows = st.query(params![process_id])?;
+        while let Some(r) = rows.next()? {
+            lines.push(row_to_json(r, &cols));
+        }
+        Ok(Value::Array(lines))
+    }).map_err(|e| e.to_string())
+}
+
+/// 3) Vrátí konfiguraci z `ewf_config` nebo `dd_config` podle `config_type`
+#[command(rename_all = "snake_case")]
+pub async fn get_config_entry(config_id: i64, config_type: String) -> Result<Value, String> {
+    let table = match config_type.as_str() {
+        "ewf" | "ewf_config" => "ewf_config",
+        "dd"  | "dd_config"  => "dd_config",
+        other => return Err(format!("Unknown config_type: {}", other))
+    };
+    let sql = format!("SELECT * FROM {} WHERE id = ?1 AND active = 1", table);
+    let mut pooled = DB_POOL.get_connection().map_err(|e| e.to_string())?;
+    pooled.execute(|conn| {
+        let mut st = conn.prepare(&sql)?;
+        let cols = st.column_names().iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        if let Some(r) = st.query_row(params![config_id], |r| Ok(row_to_json(r, &cols))).optional()? {
+            Ok(r)
+        } else {
+            Ok(Value::Null)
+        }
+    }).map_err(|e| e.to_string())
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Modal, Progress } from '@skeletonlabs/skeleton-svelte';
-	import { SquareX, Send, Lock, LockOpen, ChevronUp } from 'lucide-svelte';
+	import { SquareX, Send, Lock, LockOpen, ChevronUp, LoaderCircle, CircleAlert, CircleCheck } from 'lucide-svelte';
 	import { Resource, invoke } from '@tauri-apps/api/core';
 	import { Toaster, createToaster } from '@skeletonlabs/skeleton-svelte';
 	import { runningProcessesStore } from '$lib/stores/processStore';
@@ -175,15 +175,23 @@
 			<div class="flex w-1/2 flex-col items-center justify-start overflow-y-auto px-4 pt-8">
 				{#each $runningProcessesStore as process (process.id)}
 					<div class="mb-4 flex w-[90%] flex-col rounded-lg bg-white shadow-md">
-						<!-- Top section: stav, rychlost -->
+						<!-- Top section: stav, ikona a rychlost -->
 						<div class="top-section bg-surface-600 flex w-full rounded-t-lg px-4 py-2">
 							<div class="w-1/2 text-left">
-								<span class="font-semibold">Status:</span>
-								{process.status}
+								<p class="flex items-center gap-1">
+									<span class="font-semibold">Status:</span> {process.status}
+									{#if process.status === 'running'}
+										<LoaderCircle class="animate-spin ml-1" />
+									{:else if process.status === 'error'}
+										<CircleAlert class="ml-1" />
+									{:else if process.status === 'done'}
+										<CircleCheck class="ml-1" />
+									{/if}
+								</p>
 							</div>
 							<div class="w-1/2 text-right">
 								<span class="font-semibold">
-									{#if process.progress_perc === 100 && process.status === 'done'}
+									{#if process.status === 'error'}
 										N/A
 									{:else}
 										{process.speed.toFixed(1)} MiB/s
@@ -220,12 +228,16 @@
 							class="bottom-section bg-surface-600 flex w-full items-center rounded-b-lg px-4 py-4"
 						>
 							<div class="flex-1">
-								<Progress value={process.progress_perc} max={100} meterBg="bg-primary-500">
-									{process.progress_perc}%
+								<Progress
+									value={process.status === 'error' ? 0 : process.progress_perc}
+									max={100}
+									meterBg="bg-primary-500"
+								>
+									{process.status === 'error' ? '0%' : `${process.progress_perc}%`}
 								</Progress>
 							</div>
 							<p class="ml-4 text-xs">
-								{#if process.progress_perc === 100 && process.status === 'done'}
+								{#if process.status === 'error' || (process.progress_perc === 100 && process.status === 'done')}
 									N/A
 								{:else}
 									{formatTime(process.progress_time)}

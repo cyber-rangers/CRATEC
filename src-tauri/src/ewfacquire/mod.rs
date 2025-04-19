@@ -1,7 +1,7 @@
+use crate::disk_utils::get_mountpoint_for_interface;
 use crate::led::LED_CONTROLLER;
 use crate::logger::{log_debug, log_error, log_warn};
 use crate::websocket;
-use crate::disk_utils::get_mountpoint_for_interface;
 use chrono::{Local, Utc};
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -173,7 +173,10 @@ pub async fn run_ewfacquire(
     if output_interfaces.is_empty() {
         return Err("(run_ewfacquire) No output disks provided!".to_string());
     }
-    let first_output = format!("/dev/disk/by-path/{}", strip_dev_prefix(&output_interfaces[0]));
+    let first_output = format!(
+        "/dev/disk/by-path/{}",
+        strip_dev_prefix(&output_interfaces[0])
+    );
     let actual_output_mount = match get_mountpoint_for_interface(&first_output) {
         Some(mounted) => mounted,
         None => {
@@ -187,7 +190,10 @@ pub async fn run_ewfacquire(
     };
 
     let second_output_mount = if output_interfaces.len() > 1 {
-        let second_output = format!("/dev/disk/by-path/{}", strip_dev_prefix(&output_interfaces[1]));
+        let second_output = format!(
+            "/dev/disk/by-path/{}",
+            strip_dev_prefix(&output_interfaces[1])
+        );
         match get_mountpoint_for_interface(&second_output) {
             Some(mounted) => Some(mounted),
             None => {
@@ -274,7 +280,7 @@ pub async fn run_ewfacquire(
             // 2) Find source & destination interface IDs from the 'interfaces' table
             let source_disk_id: i64 = tx
                 .query_row(
-                    "SELECT id FROM interfaces WHERE interface_path = ?1 LIMIT 1",
+                    "SELECT id FROM interface WHERE interface_path = ?1 LIMIT 1",
                     [input_raw.as_str()],
                     |row| row.get(0),
                 )
@@ -287,7 +293,7 @@ pub async fn run_ewfacquire(
 
             let first_output_id: i64 = tx
                 .query_row(
-                    "SELECT id FROM interfaces WHERE interface_path = ?1 LIMIT 1",
+                    "SELECT id FROM interface WHERE interface_path = ?1 LIMIT 1",
                     [first_output_raw.as_str()],
                     |row| row.get(0),
                 )
@@ -302,7 +308,7 @@ pub async fn run_ewfacquire(
                 let second_stripped = output_interfaces_raw[1].clone();
                 Some(
                     tx.query_row(
-                        "SELECT id FROM interfaces WHERE interface_path = ?1 LIMIT 1",
+                        "SELECT id FROM interface WHERE interface_path = ?1 LIMIT 1",
                         [second_stripped.as_str()],
                         |row| row.get(0),
                     )
@@ -718,9 +724,8 @@ pub async fn run_ewfacquire(
                 ).map_err(|e| format!("(DB stderr) Chyba při zápisu stderr: {}", e))?;
             }
             CommandEvent::Terminated(exit_code) => {
-
                 LED_CONTROLLER.notify_process_end();
-                
+
                 // Process has finished. 0 => success; otherwise an error code
                 let final_status = if exit_code.code.unwrap_or(-1) == 0 {
                     "done"
