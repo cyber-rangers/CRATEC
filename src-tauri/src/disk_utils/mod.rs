@@ -1,5 +1,6 @@
 use serde::Serialize;
 use serde_json::Value;
+use serde_json::json;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -128,38 +129,30 @@ pub struct DiskInfo {
     pub capacity_bytes: u64,
     pub logical_sector_size: u64,
     pub partitions: Vec<PartitionInfo>,
-    pub disk_encryption: Option<String>,
+    pub ata_encryption: bool, // změna zde
     pub has_hpa: bool,
     pub has_dco: bool,
+    pub model: Option<String>,
 }
 
-/// Detekce šifrování pomocí lsblk JSON.
-/// Prochází oddíly a pokud u některého najde fstype obsahující indikátor šifrování,
-/// vrací ho (např. "BitLocker", "crypto_LUKS", "dm-crypt").
-fn detect_encryption(device: &str) -> Option<String> {
-    let lsblk_data = get_lsblk_json(device).ok()?;
-    let devices = lsblk_data["blockdevices"].as_array()?;
-    if devices.is_empty() {
-        return None;
-    }
-    let disk = &devices[0];
-    if let Some(children) = disk["children"].as_array() {
-        for child in children {
-            if let Some(fstype) = child["fstype"].as_str() {
-                let fstype_lc = fstype.to_lowercase();
-                if fstype_lc.contains("bitlocker")
-                    || fstype_lc.contains("luks")
-                    || fstype_lc.contains("dm-crypt")
-                {
-                    return Some(fstype.to_string());
+fn detect_ata_encryption(device: &str) -> bool {
+    if let Ok(output) = std::process::Command::new("sudo")
+        .arg("hdparm")
+        .arg("-I")
+        .arg(device)
+        .output()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.contains("Security:") {
+            for line in stdout.lines() {
+                if line.trim().starts_with("enabled") {
+                    return true;
                 }
             }
         }
     }
-    None
+    false
 }
-
-
 
 /// Detekce HPA a DCO pomocí příkazů hdparm a blockdev.
 /// Vrací dvojici: (Option<bool> pro HPA, Option<bool> pro DCO).
@@ -247,6 +240,8 @@ pub fn get_disk_info(device: &str) -> Result<DiskInfo, String> {
         .as_u64()
         .ok_or("Failed to parse logical sector size")?;
 
+    let model = disk["model"].as_str().map(|s| s.to_string());
+
     let mut partitions = Vec::new();
     if let Some(children) = disk["children"].as_array() {
         for child in children {
@@ -257,15 +252,7 @@ pub fn get_disk_info(device: &str) -> Result<DiskInfo, String> {
                 .as_str()
                 .map(|s| s.to_string())
                 .or(Some("unknown".to_string()));
-            let is_encrypted = filesystem
-                .as_ref()
-                .map(|fs| {
-                    let fs_lc = fs.to_lowercase();
-                    fs_lc.contains("bitlocker")
-                        || fs_lc.contains("luks")
-                        || fs_lc.contains("dm-crypt")
-                })
-                .unwrap_or(false);
+            let is_encrypted = false; // už neřešíme SW šifrování
             let end_sector = if part_size > 0 {
                 start_sector + (part_size / 512) - 1
             } else {
@@ -281,7 +268,7 @@ pub fn get_disk_info(device: &str) -> Result<DiskInfo, String> {
             });
         }
     }
-    let disk_encryption = detect_encryption(device);
+    let ata_encryption = detect_ata_encryption(device);
     let (has_hpa, has_dco) = detect_hpa_dco(device);
 
     Ok(DiskInfo {
@@ -289,8 +276,9 @@ pub fn get_disk_info(device: &str) -> Result<DiskInfo, String> {
         capacity_bytes,
         logical_sector_size,
         partitions,
-        disk_encryption,
+        ata_encryption,
         has_hpa: has_hpa.unwrap_or(false),
         has_dco: has_dco.unwrap_or(false),
+        model,
     })
 }

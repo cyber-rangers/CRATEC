@@ -45,6 +45,7 @@ Unlock DCO/ACS3: & {{ unlock_dco }} \\
 Error Granularity: & {{ granularity_sectors }} \\
 Swap media bytes pairs & {{ swap_byte_pairs }} \\
 Result: & {{ result }} \\
+Start Time: & {{ time_started }} \\
 Duration: & {{ duration }} \\
 Time at Completion: & {{ time_complete }} \\
 \end{tabular}
@@ -52,10 +53,9 @@ Time at Completion: & {{ time_complete }} \\
 \vspace{1em}
 \section*{Hash Information}
 \begin{tabular}{@{}ll}
-Hash Type: & {{ hash_primary_type }} \\
-Source Hash: & {{ hash_primary }} \\
-Secondary Hash Type: & {{ hash_secondary_type }} \\
-Secondary Source Hash: & {{ hash_secondary }} \\
+{% for hash in hashes %}
+{{ hash.0 }}: & {{ hash.1 }} \\
+{% endfor %}
 \end{tabular}
 
 \vspace{1em}
@@ -81,12 +81,12 @@ Hash: & {{ segment_hash }} \\
 \vspace{1em}
 \section*{Drive Information}
 {\small
-\begin{longtable}{|p{1.3cm}|p{0.8cm}|p{3.2cm}|p{4.2cm}|p{1.1cm}|p{1.5cm}|p{1.5cm}|}
+\begin{longtable}{|l|l|l|l|l|l|}
 \hline
-Bay & Role & Serial & Model & RAID & Filesystem & Cipher \\
+Bay & Role & Serial & Model & Filesystem & Cipher \\
 \hline
 {% for drive in drives %}
-{{ drive.bay }} & {{ drive.role }} & {{ drive.serial }} & {{ drive.model }} & {{ drive.raid }} & {{ drive.fs }} & {{ drive.cipher }} \\
+{{ drive.bay }} & {{ drive.role }} & {{ drive.serial }} & {{ drive.model }} & {{ drive.fs }} & {{ drive.cipher }} \\
 \hline
 {% endfor %}
 \end{longtable}
@@ -94,12 +94,17 @@ Bay & Role & Serial & Model & RAID & Filesystem & Cipher \\
 
 \vspace{1em}
 \section*{Drive Capacities}
-\begin{tabular}{@{}lll}
-Bay & Serial & Capacity-GB \\
+{\small
+\begin{longtable}{|l|l|l|l|l|}
+\hline
+Bay & Serial & Model & Capacity [bytes] & Capacity [GB] \\
+\hline
 {% for cap in capacities %}
-{{ cap.bay }} & {{ cap.serial }} & {{ cap.capacity }} \\
+{{ cap.bay }} & {{ cap.serial }} & {{ cap.model }} & {{ cap.capacity_bytes }} & {{ cap.capacity_gb }} \\
+\hline
 {% endfor %}
-\end{tabular}
+\end{longtable}
+}
 
 \vspace{1em}
 \section*{Drive ATA Security Information}
@@ -121,14 +126,16 @@ Bay & Role & Encrypted & Locked \\
 
 \vspace{1em}
 \section*{Source Partition Information}
-\begin{tabular}{|c|c|c|c|c|c|c|}
+{\small
+\begin{longtable}{|c|c|c|c|c|c|c|}
 \hline
 Partition & File System & Start & End & Size & Encryption & Decrypted \\
 \hline
-{% for part in partitions %}
+{% for part in source_partitions %}
 {{ part.index }} & {{ part.fs }} & {{ part.start }} & {{ part.end }} & {{ part.size }} & {{ part.encryption }} & {{ part.decrypted }} \\
 \hline
 {% endfor %}
-\end{tabular}
+\end{longtable}
+}
 
 \end{document}

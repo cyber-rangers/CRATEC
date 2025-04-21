@@ -1,6 +1,6 @@
 use crate::db::DB_POOL;
 use crate::disk_utils;
-use chrono::Local;
+use chrono::{Local, NaiveDateTime};
 use rusqlite::{params, Connection, Row, Statement};
 use serde_json::{Map, Value};
 use std::fs;
@@ -39,168 +39,13 @@ fn row_to_json_with_columns(row: &Row, column_names: &[String]) -> Value {
     Value::Object(obj)
 }
 
-/// Vygeneruje report pomocí mock dat – původní implementace.
-pub fn mock_data_report() -> Result<(), String> {
-    println!("📄 Vkládám šablonu přímo z kódu...");
-
-    let mut context = Context::new();
-
-    // Nastavení proměnných pro šablonu
-    context.insert("software_hash", "75f1c14d734ea09147330fae210faa54");
-    context.insert("build_date", "Jul 08, 2024 13:38:46 PDT");
-    context.insert("serial_number", "117495");
-    context.insert("time_local", "12:17:32 (CEST +0200)");
-    context.insert("date", "Jul 08, 2024");
-    context.insert("mode", "DriveToFile");
-    context.insert("method", "DDCapture");
-    context.insert("hash_type", "SHA-1");
-    context.insert("image_path", "/var/reports/.../Kingston480GB\\_SATA");
-    context.insert("lba_count", &937703088u64);
-    context.insert("sector_size", &512u64);
-    context.insert("segment_size", "WholeDisk");
-    context.insert("compression", "None");
-    context.insert("hash_enabled", &true);
-    context.insert("verify_hash", &false);
-    context.insert("unlock_hpa", &false);
-    context.insert("unlock_dco", &false);
-    context.insert("granularity", "SUCCESS");
-    context.insert("result", "SUCCESS");
-    context.insert("duration", "00:47:20");
-    context.insert("time_complete", "12:14:52");
-    context.insert("hash_lba_count", &937703088u64);
-    context.insert("hash_sector_size", &512u64);
-    context.insert("hash_primary_type", "SHA-1");
-    context.insert("hash_primary", "75f1c14d734ea09147330fae210faa54");
-    context.insert("hash_secondary_type", "MD5");
-    context.insert("hash_secondary", "abcdef1234567890abcdef1234567890");
-    context.insert("case_file", "CaseFile\\_001");
-    context.insert("case_id", "CASE-2024-001");
-    context.insert("examiner", "John Doe");
-    context.insert("notes", "This case involves encrypted drives.");
-    context.insert("segment_uid", "SEG123456");
-    context.insert("segment_path", "/segments/seg123456");
-    context.insert("segment_fs", "NTFS");
-    context.insert("segment_serial", "SEG-SERIAL-001");
-    context.insert("segment_file", "segment\\_file.img");
-    context.insert("segment_hash", "seg\\_hash\\_abc123");
-
-    // Ukázka disků
-    let drives = vec![
-        {
-            let mut map = std::collections::HashMap::new();
-            map.insert("bay", "1");
-            map.insert("role", "Primary");
-            map.insert("serial", "DRIVE123456");
-            map.insert("model", "WD Blue");
-            map.insert("raid", "RAID0");
-            map.insert("fs", "EXT4");
-            map.insert("cipher", "None");
-            map
-        },
-        {
-            let mut map = std::collections::HashMap::new();
-            map.insert("bay", "2");
-            map.insert("role", "Secondary");
-            map.insert("serial", "DRIVE654321");
-            map.insert("model", "Seagate Barracuda");
-            map.insert("raid", "RAID1");
-            map.insert("fs", "EXT4");
-            map.insert("cipher", "AES-256");
-            map
-        },
-    ];
-    context.insert("drives", &drives);
-
-    // Kapacity
-    let capacities = vec![
-        {
-            let mut map = std::collections::HashMap::new();
-            map.insert("bay", "1");
-            map.insert("serial", "DRIVE123456");
-            map.insert("capacity", "500");
-            map
-        },
-        {
-            let mut map = std::collections::HashMap::new();
-            map.insert("bay", "2");
-            map.insert("serial", "DRIVE654321");
-            map.insert("capacity", "1000");
-            map
-        },
-    ];
-    context.insert("capacities", &capacities);
-
-    // ATA security
-    let ata_security = vec![{
-        let mut map = std::collections::HashMap::new();
-        map.insert("bay", "1");
-        map.insert("role", "Primary");
-        map.insert("enabled", "Yes");
-        map.insert("locked", "No");
-        map
-    }];
-    context.insert("ata_security", &ata_security);
-
-    // Encryption
-    let encryption = vec![{
-        let mut map = std::collections::HashMap::new();
-        map.insert("bay", "2");
-        map.insert("role", "Secondary");
-        map.insert("encrypted", "Yes");
-        map.insert("locked", "Yes");
-        map
-    }];
-    context.insert("encryption", &encryption);
-
-    // Partitions
-    let partitions = vec![
-        {
-            let mut map = std::collections::HashMap::new();
-            map.insert("index", "1");
-            map.insert("fs", "NTFS");
-            map.insert("start", "2048");
-            map.insert("end", "409600");
-            map.insert("size", "200MB");
-            map.insert("encryption", "Yes");
-            map.insert("decrypted", "No");
-            map
-        },
-        {
-            let mut map = std::collections::HashMap::new();
-            map.insert("index", "2");
-            map.insert("fs", "FAT32");
-            map.insert("start", "409601");
-            map.insert("end", "819200");
-            map.insert("size", "200MB");
-            map.insert("encryption", "No");
-            map.insert("decrypted", "Yes");
-            map
-        },
-    ];
-    context.insert("partitions", &partitions);
-
-    println!("🧾 Vyrenderuji šablonu z paměti...");
-    let latex_code = Tera::one_off(TEMPLATE, &context, false)
-        .map_err(|e| format!("Chyba při renderování šablony: {}", e))?;
-
-    fs::write("/home/master/Dokumenty/debug_output.tex", &latex_code)
-        .map_err(|e| format!("Nelze uložit debug_output.tex: {}", e))?;
-
-    println!("🧾 Kompiluji PDF pomocí Tectonic...");
-    match tectonic::latex_to_pdf(&latex_code) {
-        Ok(pdf_data) => {
-            fs::write("/home/master/Dokumenty/output.pdf", pdf_data)
-                .map_err(|e| format!("Nelze uložit output.pdf: {}", e))?;
-            println!("✅ PDF úspěšně vytvořeno: output.pdf");
-        }
-        Err(e) => {
-            eprintln!("❌ Chyba při kompilaci: {:#?}", e);
-            println!("🧪 LaTeX byl uložen do debug_output.tex.");
-            return Err(format!("Chyba při kompilaci: {:?}", e));
-        }
-    }
-
-    Ok(())
+fn get_interface_path(conn: &rusqlite::Connection, interface_id: i64) -> Option<String> {
+    conn.query_row(
+        "SELECT interface_path FROM interface WHERE id = ?1",
+        rusqlite::params![interface_id],
+        |row| row.get(0),
+    )
+    .ok()
 }
 
 /// Nová funkce generate_report, která zatím přijímá copy_process id a nedělá nic dalšího.
@@ -217,24 +62,24 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
     // Hledáme v reportu log_record a vždy vložíme pole source_disk, dest_disk a second_dest_disk
     if let Some(log_value) = report.get("log_record").cloned() {
         if let Some(log_obj) = log_value.as_object() {
-            // Funkce pro doplnění paths
-            fn full_disk_path(disk_id: &str) -> String {
-                if disk_id.starts_with("/dev/disk/by-path/") {
-                    disk_id.to_string()
-                } else {
-                    format!("/dev/disk/by-path/{}", disk_id)
-                }
-            }
+            let mut pooled_conn = DB_POOL.get_connection().unwrap();
+            let conn = pooled_conn.connection();
 
             // Získání source_disk
             let source_disk = if let Some(source_disk_id) =
-                log_obj.get("source_disk_id").and_then(|v| v.as_str())
+                log_obj.get("source_disk_id").and_then(|v| v.as_i64())
             {
-                if !source_disk_id.trim().is_empty() {
-                    let path = full_disk_path(source_disk_id);
-                    let disk_info = disk_utils::get_disk_info(&path)?;
-                    serde_json::to_value(disk_info)
-                        .map_err(|e| format!("Chyba při serializaci disk info (source): {}", e))?
+                if source_disk_id != 0 {
+                    if let Some(interface_path) = get_interface_path(conn, source_disk_id) {
+                        let path = format!("/dev/disk/by-path/{}", interface_path);
+                        println!("SOURCE DISK PAH :{} ", path);
+                        let disk_info = disk_utils::get_disk_info(&path)?;
+                        serde_json::to_value(disk_info).map_err(|e| {
+                            format!("Chyba při serializaci disk info (source): {}", e)
+                        })?
+                    } else {
+                        serde_json::Value::String(String::new())
+                    }
                 } else {
                     serde_json::Value::String(String::new())
                 }
@@ -244,10 +89,13 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
             report.insert("source_disk".into(), source_disk);
 
             // Získání dest_disk
-            let dest_disk =
-                if let Some(dest_disk_id) = log_obj.get("dest_disk_id").and_then(|v| v.as_str()) {
-                    if !dest_disk_id.trim().is_empty() {
-                        let path = full_disk_path(dest_disk_id);
+            let dest_disk = if let Some(dest_disk_id) =
+                log_obj.get("dest_disk_id").and_then(|v| v.as_i64())
+            {
+                if dest_disk_id != 0 {
+                    if let Some(interface_path) = get_interface_path(conn, dest_disk_id) {
+                        let path = format!("/dev/disk/by-path/{}", interface_path);
+                        println!("DEST DISK PAH :{} ", path);
                         let disk_info = disk_utils::get_disk_info(&path)?;
                         serde_json::to_value(disk_info)
                             .map_err(|e| format!("Chyba při serializaci disk info (dest): {}", e))?
@@ -256,18 +104,27 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
                     }
                 } else {
                     serde_json::Value::String(String::new())
-                };
+                }
+            } else {
+                serde_json::Value::String(String::new())
+            };
             report.insert("dest_disk".into(), dest_disk);
 
             // Získání second_dest_disk (vždy vloženo, může být prázdné)
             let second_dest_disk = if let Some(second_dest_disk_id) =
-                log_obj.get("second_dest_disk_id").and_then(|v| v.as_str())
+                log_obj.get("second_dest_disk_id").and_then(|v| v.as_i64())
             {
-                if !second_dest_disk_id.trim().is_empty() {
-                    let path = full_disk_path(second_dest_disk_id);
-                    let disk_info = disk_utils::get_disk_info(&path)?;
-                    serde_json::to_value(disk_info)
-                        .map_err(|e| format!("Chyba při serializaci disk info (second): {}", e))?
+                if second_dest_disk_id != 0 {
+                    if let Some(interface_path) = get_interface_path(conn, second_dest_disk_id) {
+                        let path = format!("/dev/disk/by-path/{}", interface_path);
+                        println!("SECOND DISK PAH :{} ", path);
+                        let disk_info = disk_utils::get_disk_info(&path)?;
+                        serde_json::to_value(disk_info).map_err(|e| {
+                            format!("Chyba při serializaci disk info (second): {}", e)
+                        })?
+                    } else {
+                        serde_json::Value::String(String::new())
+                    }
                 } else {
                     serde_json::Value::String(String::new())
                 }
@@ -364,7 +221,6 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
         .unwrap_or("N/A");
     context.insert("ewf_format", ewf_format);
 
-
     let hash_enabled = if hash_types != "N/A" && !hash_types.trim().is_empty() {
         true
     } else {
@@ -375,7 +231,7 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
     context.insert("verify_hash", &false);
     context.insert("unlock_hpa", &false);
     context.insert("unlock_dco", &false);
-    
+
     let granularity_sectors = report
         .get("config_record")
         .and_then(|cfg| cfg.get("granularity_sectors"))
@@ -383,38 +239,96 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
         .unwrap_or("N/A");
     context.insert("granularity_sectors", granularity_sectors);
 
-    let swap_byte_pairs = report
+    let swap_byte_pairs = match report
         .get("config_record")
         .and_then(|cfg| cfg.get("swap_byte_pairs"))
-        .and_then(Value::as_str)
-        .unwrap_or("N/A");
-    context.insert("swap_byte_pairs", swap_byte_pairs);
-    
+        .and_then(Value::as_i64)
+    {
+        Some(0) => serde_json::Value::Bool(false),
+        Some(1) => serde_json::Value::Bool(true),
+        _ => serde_json::Value::String("N/A".to_string()),
+    };
+    context.insert("swap_byte_pairs", &swap_byte_pairs);
 
     // místo pevného "result"
-    let result = report
+    let result = match report
         .get("copy_process")
         .and_then(|cp| cp.get("status"))
         .and_then(Value::as_str)
-        .unwrap_or("UNKNOWN");
+    {
+        Some("done") => "SUCCESS",
+        Some("error") => "ERROR",
+        _ => "N/A",
+    };
     context.insert("result", result);
 
-    context.insert("duration", "00:47:20");
+    // Získání a formátování time_started z copy_process.start_datetime
+    let time_started_raw = report
+        .get("copy_process")
+        .and_then(|cp| cp.get("start_datetime"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let time_started = NaiveDateTime::parse_from_str(time_started_raw, "%Y-%m-%d %H:%M:%S")
+        .map(|dt| dt.format("%H:%M:%S %-d.%-m.%Y").to_string())
+        .unwrap_or_else(|_| "".to_string());
+    context.insert("time_started", &time_started);
 
-    // místo pevného "time_complete"
-    let time_complete = report
+    // Výpočet duration jako rozdíl mezi copy_process.end_datetime a copy_process.start_datetime
+    let duration_str = {
+        let fmt = "%Y-%m-%d %H:%M:%S";
+        let start_opt = NaiveDateTime::parse_from_str(time_started_raw, fmt).ok();
+        let end_opt = report
+            .get("copy_process")
+            .and_then(|cp| cp.get("end_datetime"))
+            .and_then(Value::as_str)
+            .and_then(|end_str| NaiveDateTime::parse_from_str(end_str, fmt).ok());
+        if let (Some(start_dt), Some(end_dt)) = (start_opt, end_opt) {
+            let diff = end_dt - start_dt;
+            let total_secs = diff.num_seconds();
+            let hours = total_secs / 3600;
+            let minutes = (total_secs % 3600) / 60;
+            let seconds = total_secs % 60;
+            format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+        } else {
+            "N/A".to_string()
+        }
+    };
+    context.insert("duration", &duration_str);
+
+    // Získání a formátování time_complete z log_record.end_datetime
+    let time_complete_raw = report
         .get("log_record")
         .and_then(|lr| lr.get("end_datetime"))
         .and_then(Value::as_str)
         .unwrap_or("");
-    context.insert("time_complete", time_complete);
+    let time_complete = NaiveDateTime::parse_from_str(time_complete_raw, "%Y-%m-%d %H:%M:%S")
+        .map(|dt| dt.format("%H:%M:%S %-d.%-m.%Y").to_string())
+        .unwrap_or_else(|_| "".to_string());
+    context.insert("time_complete", &time_complete);
 
-    context.insert("hash_lba_count", &937703088u64);
-    context.insert("hash_sector_size", &512u64);
-    context.insert("hash_primary_type", "SHA-1");
-    context.insert("hash_primary", "75f1c14d734ea09147330fae210faa54");
-    context.insert("hash_secondary_type", "MD5");
-    context.insert("hash_secondary", "abcdef1234567890abcdef1234567890");
+    let log_record = report
+        .get("log_record")
+        .and_then(|v| v.as_object())
+        .unwrap();
+
+    let mut hashes = Vec::new();
+
+    if let Some(md5) = log_record.get("md5_hash").and_then(|v| v.as_str()) {
+        if !md5.is_empty() {
+            hashes.push(("MD5", md5));
+        }
+    }
+    if let Some(sha1) = log_record.get("sha1_hash").and_then(|v| v.as_str()) {
+        if !sha1.is_empty() {
+            hashes.push(("SHA1", sha1));
+        }
+    }
+    if let Some(sha256) = log_record.get("sha256_hash").and_then(|v| v.as_str()) {
+        if !sha256.is_empty() {
+            hashes.push(("SHA256", sha256));
+        }
+    }
+    context.insert("hashes", &hashes);
     context.insert("case_file", "CaseFile\\_001");
 
     // místo pevného "case_id"
@@ -431,7 +345,6 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
         .and_then(Value::as_str)
         .unwrap_or("");
     context.insert("evidence_number", evidence_number);
-
 
     // místo pevného "examiner"
     let examiner = report
@@ -456,50 +369,217 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
     context.insert("segment_file", "segment\\_file.img");
     context.insert("segment_hash", "seg\\_hash\\_abc123");
 
-    // Ukázka disků
-    let drives = vec![
-        {
+    let mut drives = Vec::new();
+
+    if let Some(source_disk) = report.get("source_disk").and_then(|v| v.as_object()) {
+        let mut map = std::collections::HashMap::new();
+        map.insert("bay", "1");
+        map.insert("role", "Source");
+        map.insert(
+            "serial",
+            source_disk
+                .get("serial")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+        );
+        map.insert(
+            "model",
+            source_disk
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+        );
+        map.insert(
+            "fs",
+            source_disk
+                .get("partitions")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.get(0))
+                .and_then(|p| p.get("filesystem"))
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+        );
+        map.insert(
+            "cipher",
+            source_disk
+                .get("disk_encryption")
+                .and_then(|v| v.as_str())
+                .unwrap_or("None"),
+        );
+        drives.push(map);
+    }
+
+    if let Some(dest_disk) = report.get("dest_disk").and_then(|v| v.as_object()) {
+        let mut map = std::collections::HashMap::new();
+        map.insert("bay", "2");
+        map.insert("role", "Destination");
+        map.insert(
+            "serial",
+            dest_disk
+                .get("serial")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+        );
+        map.insert(
+            "model",
+            dest_disk
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+        );
+        map.insert(
+            "fs",
+            dest_disk
+                .get("partitions")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.get(0))
+                .and_then(|p| p.get("filesystem"))
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+        );
+        map.insert(
+            "cipher",
+            dest_disk
+                .get("disk_encryption")
+                .and_then(|v| v.as_str())
+                .unwrap_or("None"),
+        );
+        drives.push(map);
+    }
+
+    if let Some(second_dest_disk) = report.get("second_dest_disk").and_then(|v| v.as_object()) {
+        // Pokud není prázdný objekt
+        if !second_dest_disk.is_empty() {
             let mut map = std::collections::HashMap::new();
-            map.insert("bay", "1");
-            map.insert("role", "Primary");
-            map.insert("serial", "DRIVE123456");
-            map.insert("model", "WD Blue");
-            map.insert("raid", "RAID0");
-            map.insert("fs", "EXT4");
-            map.insert("cipher", "None");
-            map
-        },
-        {
-            let mut map = std::collections::HashMap::new();
-            map.insert("bay", "2");
-            map.insert("role", "Secondary");
-            map.insert("serial", "DRIVE654321");
-            map.insert("model", "Seagate Barracuda");
-            map.insert("raid", "RAID1");
-            map.insert("fs", "EXT4");
-            map.insert("cipher", "AES-256");
-            map
-        },
-    ];
+            map.insert("bay", "3");
+            map.insert("role", "Secondary Destination");
+            map.insert(
+                "serial",
+                second_dest_disk
+                    .get("serial")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(""),
+            );
+            map.insert(
+                "model",
+                second_dest_disk
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(""),
+            );
+            map.insert(
+                "fs",
+                second_dest_disk
+                    .get("partitions")
+                    .and_then(|v| v.as_array())
+                    .and_then(|arr| arr.get(0))
+                    .and_then(|p| p.get("filesystem"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(""),
+            );
+            map.insert(
+                "cipher",
+                second_dest_disk
+                    .get("disk_encryption")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("None"),
+            );
+            drives.push(map);
+        }
+    }
+
     context.insert("drives", &drives);
 
-    // Kapacity
-    let capacities = vec![
-        {
+    let mut capacities = Vec::new();
+
+    if let Some(source_disk) = report.get("source_disk").and_then(|v| v.as_object()) {
+        let mut map = std::collections::HashMap::new();
+        map.insert("bay".to_string(), "1".to_string());
+        map.insert(
+            "serial".to_string(),
+            source_disk
+                .get("serial")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        map.insert(
+            "model".to_string(),
+            source_disk
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        let cap_bytes = source_disk
+            .get("capacity_bytes")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let cap_gb = (cap_bytes as f64) / 1024.0 / 1024.0 / 1024.0;
+        map.insert("capacity_bytes".to_string(), cap_bytes.to_string());
+        map.insert("capacity_gb".to_string(), format!("{:.1}", cap_gb));
+        capacities.push(map);
+    }
+
+    if let Some(dest_disk) = report.get("dest_disk").and_then(|v| v.as_object()) {
+        let mut map = std::collections::HashMap::new();
+        map.insert("bay".to_string(), "2".to_string());
+        map.insert(
+            "serial".to_string(),
+            dest_disk
+                .get("serial")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        map.insert(
+            "model".to_string(),
+            dest_disk
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        );
+        let cap_bytes = dest_disk
+            .get("capacity_bytes")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let cap_gb = (cap_bytes as f64) / 1024.0 / 1024.0 / 1024.0;
+        map.insert("capacity_bytes".to_string(), cap_bytes.to_string());
+        map.insert("capacity_gb".to_string(), format!("{:.1}", cap_gb));
+        capacities.push(map);
+    }
+
+    if let Some(second_dest_disk) = report.get("second_dest_disk").and_then(|v| v.as_object()) {
+        if !second_dest_disk.is_empty() {
             let mut map = std::collections::HashMap::new();
-            map.insert("bay", "1");
-            map.insert("serial", "DRIVE123456");
-            map.insert("capacity", "500");
-            map
-        },
-        {
-            let mut map = std::collections::HashMap::new();
-            map.insert("bay", "2");
-            map.insert("serial", "DRIVE654321");
-            map.insert("capacity", "1000");
-            map
-        },
-    ];
+            map.insert("bay".to_string(), "3".to_string());
+            map.insert(
+                "serial".to_string(),
+                second_dest_disk
+                    .get("serial")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            );
+            map.insert(
+                "model".to_string(),
+                second_dest_disk
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            );
+            let cap_bytes = second_dest_disk
+                .get("capacity_bytes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let cap_gb = (cap_bytes as f64) / 1024.0 / 1024.0 / 1024.0;
+            map.insert("capacity_bytes".to_string(), cap_bytes.to_string());
+            map.insert("capacity_gb".to_string(), format!("{:.1}", cap_gb));
+            capacities.push(map);
+        }
+    }
     context.insert("capacities", &capacities);
 
     // ATA security
@@ -524,33 +604,68 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
     }];
     context.insert("encryption", &encryption);
 
-    // Partitions
-    let partitions = vec![
-        {
-            let mut map = std::collections::HashMap::new();
-            map.insert("index", "1");
-            map.insert("fs", "NTFS");
-            map.insert("start", "2048");
-            map.insert("end", "409600");
-            map.insert("size", "200MB");
-            map.insert("encryption", "Yes");
-            map.insert("decrypted", "No");
-            map
-        },
-        {
-            let mut map = std::collections::HashMap::new();
-            map.insert("index", "2");
-            map.insert("fs", "FAT32");
-            map.insert("start", "409601");
-            map.insert("end", "819200");
-            map.insert("size", "200MB");
-            map.insert("encryption", "No");
-            map.insert("decrypted", "Yes");
-            map
-        },
-    ];
-    context.insert("partitions", &partitions);
+    let mut source_partitions = Vec::new();
+    if let Some(source_disk) = report.get("source_disk").and_then(|v| v.as_object()) {
+        if let Some(parts) = source_disk.get("partitions").and_then(|v| v.as_array()) {
+            for part in parts {
+                let mut map = std::collections::HashMap::new();
+                map.insert(
+                    "index".to_string(),
+                    part.get("index")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v.to_string())
+                        .unwrap_or_default(),
+                );
+                map.insert(
+                    "fs".to_string(),
+                    part.get("filesystem")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                );
+                map.insert(
+                    "start".to_string(),
+                    part.get("start_sector")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v.to_string())
+                        .unwrap_or_default(),
+                );
+                map.insert(
+                    "end".to_string(),
+                    part.get("end_sector")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v.to_string())
+                        .unwrap_or_default(),
+                );
+                // Výpočet velikosti v sektorech a v MB
+                let start = part
+                    .get("start_sector")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let end = part.get("end_sector").and_then(|v| v.as_u64()).unwrap_or(0);
+                let size_mb = ((end + 1).saturating_sub(start)) as f64 * 512.0 / 1024.0 / 1024.0;
+                map.insert("size".to_string(), format!("{:.1} MB", size_mb));
+                let is_encrypted = part
+                    .get("is_encrypted")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                map.insert(
+                    "encryption".to_string(),
+                    if is_encrypted {
+                        "Yes".to_string()
+                    } else {
+                        "No".to_string()
+                    },
+                );
+                // Pokud máš info o dešifrování, doplň, jinak nech prázdné
+                map.insert("decrypted".to_string(), "".to_string());
+                source_partitions.push(map);
+            }
+        }
+    }
+    context.insert("source_partitions", &source_partitions);
 
+    
     println!("🧾 Vyrenderuji šablonu z paměti...");
     let latex_code = Tera::one_off(TEMPLATE, &context, false)
         .map_err(|e| format!("Chyba při renderování šablony: {}", e))?;
