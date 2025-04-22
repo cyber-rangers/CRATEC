@@ -5,6 +5,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount } from 'svelte';
 	import DiskSelectModal from '$lib/components/modals/DiskSelectModal.svelte';
+	import WarningModal from '$lib/components/modals/WarningModal.svelte';
 	import { Slider } from '@skeletonlabs/skeleton-svelte';
 	import { writable, type Writable } from 'svelte/store';
 	import type { EwfParams, DdParams } from '$lib/stores/copyRunStore';
@@ -60,6 +61,8 @@
 	let configSelected = false;
 	let selectedConfig: any = null;
 	let currentStep = 0;
+
+	let WarningModalOpen = false;
 
 	let showKeyboard = false;
 	let activeInput = '';
@@ -261,7 +264,6 @@
 			processStarted = false;
 			currentStep = 0;
 			copyRunStore.set(defaultCopyRunState);
-
 		} catch (error) {
 			console.error('Chyba při spouštění ewfacquire:', error);
 		}
@@ -307,7 +309,6 @@
 			processStarted = false;
 			currentStep = 0;
 			copyRunStore.set(defaultCopyRunState);
-			
 		} catch (error) {
 			console.error('Error running ddacquire:', error);
 		}
@@ -365,6 +366,15 @@
 			{/if}
 		</section>
 	</div>
+
+	<button
+		class="box"
+		type="button"
+		on:click={() => {
+			modalSide = 'input';
+			WarningModalOpen = true;
+		}}>texr</button
+	>
 {:else}
 	<!-- Stepper -->
 	<div class="w-full">
@@ -619,7 +629,9 @@
 							<input
 								type="text"
 								class="input border-primary-500 mx-auto block w-[400px] border-2 text-center"
-								bind:value={$copyRunStore.ewfParams[stepsToUse[currentStep].field as keyof EwfParams]}
+								bind:value={
+									$copyRunStore.ewfParams[stepsToUse[currentStep].field as keyof EwfParams]
+								}
 								on:focus={() => openKeyboard(stepsToUse[currentStep].field ?? '')}
 							/>
 						{:else}
@@ -649,10 +661,12 @@
 
 <DiskSelectModal bind:openState={DiskSelectModalOpen} side={modalSide} />
 
+<WarningModal bind:openState={WarningModalOpen} />
+
 <VirtualKeyboard
 	bind:showKeyboard
-	bind:activeInput={activeInput}
-	bind:formData={formData}
+	bind:activeInput
+	bind:formData
 	on:closeKeyboard={closeKeyboard}
 />
 

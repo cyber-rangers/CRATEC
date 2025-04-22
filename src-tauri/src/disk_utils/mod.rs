@@ -129,9 +129,11 @@ pub struct DiskInfo {
     pub capacity_bytes: u64,
     pub logical_sector_size: u64,
     pub partitions: Vec<PartitionInfo>,
-    pub ata_encryption: bool, // změna zde
+    pub ata_encryption: bool,
+    pub sed_encryption: bool,
+    pub readable: bool,
     pub has_hpa: bool,
-    pub has_dco: bool,
+    pub dco: u64,
     pub model: Option<String>,
 }
 
@@ -158,11 +160,9 @@ fn detect_ata_encryption(device: &str) -> bool {
 /// Vrací dvojici: (Option<bool> pro HPA, Option<bool> pro DCO).
 /// Pokud výstup obsahuje "missing sense data", "bad sense data" nebo "Real max sectors: 1",
 /// vrátí se None (N/A); jinak se porovná Real max sectors s adresovatelnými sektory.
-pub fn detect_hpa_dco(device: &str) -> (Option<bool>, Option<bool>) {
-    let mut has_hpa: Option<bool> = None;
-    let mut has_dco: Option<bool> = None;
-
+pub fn detect_hpa_dco(device: &str) -> (bool, u64) {
     // Detekce HPA
+    let mut has_hpa = false;
     if let Ok(output) = Command::new("sudo")
         .arg("hdparm")
         .arg("-N")
@@ -170,16 +170,21 @@ pub fn detect_hpa_dco(device: &str) -> (Option<bool>, Option<bool>) {
         .output()
     {
         let stdout = String::from_utf8_lossy(&output.stdout);
-        if stdout.contains("missing sense data") || stdout.contains("bad sense data") {
-            has_hpa = None;
-        } else if stdout.contains("HPA is enabled") {
-            has_hpa = Some(true);
-        } else if stdout.contains("HPA is disabled") {
-            has_hpa = Some(false);
+
+        let has_bad_sense = stdout.contains("bad/missing sense data");
+        let has_invalid_max = stdout.lines().any(|l| l.trim() == "max sectors   = 0/1, HPA is enabled");
+
+        if !has_bad_sense && !has_invalid_max {
+            if stdout.contains("HPA is enabled") {
+                has_hpa = true;
+            } else if stdout.contains("HPA is disabled") {
+                has_hpa = false;
+            }
         }
     }
 
-    // Detekce DCO
+    // Detekce DCO - získání real max sectors
+    let mut real_max_sectors = 0u64;
     if let Ok(output) = Command::new("sudo")
         .arg("hdparm")
         .arg("--dco-identify")
@@ -187,33 +192,56 @@ pub fn detect_hpa_dco(device: &str) -> (Option<bool>, Option<bool>) {
         .output()
     {
         let stdout = String::from_utf8_lossy(&output.stdout);
-        if stdout.contains("missing sense data")
-            || stdout.contains("bad sense data")
-            || stdout.contains("Real max sectors: 1")
+        if !stdout.contains("missing sense data")
+            && !stdout.contains("bad sense data")
+            && !stdout.contains("Real max sectors: 1")
         {
-            has_dco = None;
-        } else if let Some(line) = stdout.lines().find(|l| l.contains("Real max sectors:")) {
-            if let Some(real_max_sectors_str) = line.split(':').nth(1) {
-                let real_max_sectors = real_max_sectors_str.trim().parse::<u64>().unwrap_or(0);
-                if let Ok(blockdev_output) = Command::new("sudo")
-                    .arg("blockdev")
-                    .arg("--getsz")
-                    .arg(device)
-                    .output()
-                {
-                    let blockdev_stdout = String::from_utf8_lossy(&blockdev_output.stdout);
-                    if let Ok(addressable_sectors) = blockdev_stdout.trim().parse::<u64>() {
-                        if real_max_sectors == addressable_sectors {
-                            has_dco = Some(false);
-                        } else {
-                            has_dco = Some(true);
-                        }
+            if let Some(line) = stdout.lines().find(|l| l.contains("Real max sectors:")) {
+                if let Some(sectors_str) = line.split(':').nth(1) {
+                    let parsed = sectors_str.trim().parse::<u64>().unwrap_or(0);
+                    if parsed > 1 {
+                        real_max_sectors = parsed;
                     }
                 }
             }
         }
     }
-    (has_hpa, has_dco)
+    (has_hpa, real_max_sectors)
+}
+
+fn detect_encryption_status(device: &str) -> (bool, bool, bool) {
+    let mut ata_encryption = false;
+    let mut sed_encryption = false;
+    let mut readable = true;
+
+    if let Ok(output) = std::process::Command::new("sudo")
+        .arg("hdparm")
+        .arg("-I")
+        .arg(device)
+        .output()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // ATA encryption detection
+        if let Some(security_section) = stdout.split("Security:").nth(1) {
+            for line in security_section.lines() {
+                let l = line.trim();
+                if l.starts_with("enabled") {
+                    ata_encryption = true;
+                }
+                if l.starts_with("locked") {
+                    readable = false;
+                }
+            }
+        }
+
+        // SED detection (search for 'encrypted' or 'encryption' in the whole output)
+        if stdout.contains("encrypted") || stdout.contains("encryption") {
+            sed_encryption = true;
+        }
+    }
+
+    (ata_encryption, sed_encryption, readable)
 }
 
 /// Získá rozšířené informace o disku z lsblk JSON a detekci HPA/DCO.
@@ -252,7 +280,7 @@ pub fn get_disk_info(device: &str) -> Result<DiskInfo, String> {
                 .as_str()
                 .map(|s| s.to_string())
                 .or(Some("unknown".to_string()));
-            let is_encrypted = false; // už neřešíme SW šifrování
+            let is_encrypted = false;
             let end_sector = if part_size > 0 {
                 start_sector + (part_size / 512) - 1
             } else {
@@ -268,8 +296,9 @@ pub fn get_disk_info(device: &str) -> Result<DiskInfo, String> {
             });
         }
     }
-    let ata_encryption = detect_ata_encryption(device);
-    let (has_hpa, has_dco) = detect_hpa_dco(device);
+
+    let (ata_encryption, sed_encryption, readable) = detect_encryption_status(device);
+    let (has_hpa, dco) = detect_hpa_dco(device);
 
     Ok(DiskInfo {
         serial,
@@ -277,8 +306,10 @@ pub fn get_disk_info(device: &str) -> Result<DiskInfo, String> {
         logical_sector_size,
         partitions,
         ata_encryption,
-        has_hpa: has_hpa.unwrap_or(false),
-        has_dco: has_dco.unwrap_or(false),
+        sed_encryption,
+        readable,
+        has_hpa,
+        dco,
         model,
     })
 }

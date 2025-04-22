@@ -24,13 +24,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The function now gets its own connection from the pool
     db::initialize_db()?;
 
-   /*  //TEST
-    let device = "/dev/sda";
+    //TEST
+    let device = "/dev/sdc";
 
     // Test funkce detect_hpa_dco
-    let (has_hpa, has_dco) = disk_utils::detect_hpa_dco(device);
-    println!("HPA: {:?}", has_hpa);
-    println!("DCO: {:?}", has_dco);
+    
+    
 
     // Test funkce get_disk_info
     match disk_utils::get_disk_info(device) {
@@ -39,17 +38,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Serial: {}", disk_info.serial);
             println!("Capacity (bytes): {}", disk_info.capacity_bytes);
             println!("Partitions: {:?}", disk_info.partitions);
-            println!("Disk Encryption: {:?}", disk_info.disk_encryption);
+            println!("ATA Encryption: {:?}", disk_info.ata_encryption);
             println!("HPA: {}", disk_info.has_hpa);
-            println!("DCO: {}", disk_info.has_dco);
+            println!("DCO: {}", disk_info.dco);
         }
         Err(e) => {
             println!("Failed to get disk info: {}", e);
         }
     }
-    // Konec TEST */
+    // Konec TEST
+
 
     report::generate_report(4)?;
+    
+    
 
     Builder::default()
         .plugin(tauri_plugin_websocket::init())
