@@ -73,6 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             power_actions::shutdown_system,
             power_actions::restart_system,
             disk_utils::get_lsblk_json,
+            disk_utils::get_disk_info,
             lockscreen::lock_system,
             lockscreen::unlock_system,
             history::get_history,

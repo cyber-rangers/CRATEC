@@ -68,6 +68,8 @@
 	let activeInput = '';
 	let formData = {};
 
+	let warningData = { dco: 0, has_hpa: false, readable: true };
+
 	function openKeyboard(inputName: string) {
 		activeInput = inputName;
 		showKeyboard = true;
@@ -203,21 +205,63 @@
 
 	let processStarted = false;
 
+	async function handleFinalStep() {
+		if (processStarted) return;
+		processStarted = true;
+
+		const sourceDisk = $copyRunStore.inputDisk;
+		if (!sourceDisk) {
+			processStarted = false;
+			return;
+		}
+		const diskPath = `/dev/disk/by-path/${sourceDisk.interface}`;
+		try {
+			const diskInfo = await invoke('get_disk_info', { device: diskPath }) as any;
+			console.log('Disk info:', diskInfo);
+
+			diskInfo.has_hpa = true;
+			diskInfo.dco = 12500;
+			diskInfo.readable = false;
+			if (diskInfo.dco !== 0 || diskInfo.has_hpa === true || diskInfo.readable === false) {
+				warningData = {
+					dco: diskInfo.dco,
+					has_hpa: diskInfo.has_hpa,
+					readable: diskInfo.readable
+				};
+				WarningModalOpen = true;
+				processStarted = false;
+				return;
+			}
+
+			if (value === 0) runEwfAcquire();
+			else runDdAcquire();
+		} catch (e) {
+			console.error('Chyba při získávání disk info:', e);
+			WarningModalOpen = true;
+			processStarted = false;
+		}
+	}
+
+	function handleWarningResult(shouldContinue: boolean) {
+		if (shouldContinue) {
+			if (value === 0) runEwfAcquire();
+			else runDdAcquire();
+		} else {
+			configSelected = false;
+			currentStep = 0;
+			copyRunStore.set(defaultCopyRunState);
+		}
+	}
+
 	function nextStep() {
 		if (!isLastStep) {
 			currentStep++;
 		} else {
-			// finální spuštění
-			if (!processStarted) {
-				processStarted = true;
-				console.log('Final copyRunStore:', $copyRunStore);
-				if (value === 0) runEwfAcquire();
-				else runDdAcquire();
-			}
+			handleFinalStep();
 		}
 	}
 
-	// Spuštění EWF
+
 	async function runEwfAcquire() {
 		try {
 			const config_id = selectedConfig.id;
@@ -366,15 +410,6 @@
 			{/if}
 		</section>
 	</div>
-
-	<button
-		class="box"
-		type="button"
-		on:click={() => {
-			modalSide = 'input';
-			WarningModalOpen = true;
-		}}>texr</button
-	>
 {:else}
 	<!-- Stepper -->
 	<div class="w-full">
@@ -651,7 +686,7 @@
 				<button type="button" class="btn bg-surface-800" on:click={prevStep} disabled={isFirstStep}>
 					<span>Předchozí</span>
 				</button>
-				<button type="button" class="btn bg-surface-800" on:click={nextStep} disabled={!canProceed}>
+				<button type="button" class="btn bg-surface-800" on:click={isLastStep ? handleFinalStep : nextStep} disabled={!canProceed}>
 					<span>{isLastStep ? 'Dokončit' : 'Další'}</span>
 				</button>
 			</nav>
@@ -661,7 +696,11 @@
 
 <DiskSelectModal bind:openState={DiskSelectModalOpen} side={modalSide} />
 
-<WarningModal bind:openState={WarningModalOpen} />
+<WarningModal
+    bind:openState={WarningModalOpen}
+    {warningData}
+    onResult={handleWarningResult}
+/>
 
 <VirtualKeyboard
 	bind:showKeyboard

@@ -244,7 +244,7 @@ fn detect_encryption_status(device: &str) -> (bool, bool, bool) {
     (ata_encryption, sed_encryption, readable)
 }
 
-/// Získá rozšířené informace o disku z lsblk JSON a detekci HPA/DCO.
+#[tauri::command(rename_all = "snake_case")]
 pub fn get_disk_info(device: &str) -> Result<DiskInfo, String> {
     let lsblk_data = get_lsblk_json(device)?;
     let devices = lsblk_data["blockdevices"]
