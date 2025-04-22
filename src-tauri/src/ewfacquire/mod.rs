@@ -506,8 +506,6 @@ pub async fn run_ewfacquire(
         );
     }
 
-    // Replace the current push_pair for read_retry_count with this code:
-
     // Parse the read_retry_count as an integer or use 2 as default
     let retry_count = config.read_retry_count.parse::<i32>().unwrap_or(2);
 
@@ -526,7 +524,6 @@ pub async fn run_ewfacquire(
     push_pair(&mut args_exec, &mut args_print, "-S", &config.segment_size);
 
     // After pushing other parameters, add the -d parameter for hash types
-    // Add this code around line 492, before adding the -t parameter
     if !config.hash_types.is_empty() && config.hash_types != "[]" {
         // Remove any brackets if present and trim
         let hash_types = config
@@ -541,21 +538,45 @@ pub async fn run_ewfacquire(
         }
     }
 
-    // První disk jako -t parametr (jako dříve)
+    
+    fn prepare_evidence_dir(base: &str, case_number: &str, evidence_number: &str) -> Result<String, String> {
+        let case_dir = Path::new(base).join(case_number);
+        let evidence_dir = case_dir.join(evidence_number);
+
+        if !case_dir.exists() {
+            fs::create_dir(&case_dir).map_err(|e| format!("Failed to create case dir: {}", e))?;
+        }
+        if !evidence_dir.exists() {
+            fs::create_dir(&evidence_dir).map_err(|e| format!("Failed to create evidence dir: {}", e))?;
+        }
+        Ok(evidence_dir.to_string_lossy().to_string())
+    }
+
+    let case_number = ewf_params.case_number.trim();
+    let evidence_number = ewf_params.evidence_number.trim();
+
+    let evidence_dir_1 = prepare_evidence_dir(&actual_output_mount, case_number, evidence_number)?;
+
+    let evidence_dir_2 = if let Some(second_mount) = &second_output_mount {
+        Some(prepare_evidence_dir(second_mount, case_number, evidence_number)?)
+    } else {
+        None
+    };
+
+    // A teď místo původního push_pair pro -t a -2 použij:
     push_pair(
         &mut args_exec,
         &mut args_print,
         "-t",
-        &format!("{}/output", actual_output_mount),
+        &format!("{}/{}", evidence_dir_1, evidence_number),
     );
 
-    // Přidání druhého disku jako -2 parametr, pokud existuje
-    if let Some(second_mount) = &second_output_mount {
+    if let Some(evidence_dir_2) = evidence_dir_2 {
         push_pair(
             &mut args_exec,
             &mut args_print,
             "-2",
-            &format!("{}/output", second_mount),
+            &format!("{}/{}", evidence_dir_2, evidence_number),
         );
     }
 

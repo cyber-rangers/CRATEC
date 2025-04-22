@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     
 
-    // Test funkce get_disk_info
+    /* // Test funkce get_disk_info
     match disk_utils::get_disk_info(device) {
         Ok(disk_info) => {
             println!("Disk Info:");
@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Failed to get disk info: {}", e);
         }
     }
-    // Konec TEST
+    // Konec TEST */
 
 
     report::generate_report(4)?;

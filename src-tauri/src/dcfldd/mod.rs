@@ -114,6 +114,20 @@ fn strip_dev_prefix(full_path: &str) -> String {
         .to_string()
 }
 
+// Pomocná funkce pro vytvoření složky case_number/evidence_number na cílovém disku
+fn prepare_evidence_dir(base: &str, case_number: &str, evidence_number: &str) -> Result<String, String> {
+    let case_dir = Path::new(base).join(case_number);
+    let evidence_dir = case_dir.join(evidence_number);
+
+    if !case_dir.exists() {
+        fs::create_dir(&case_dir).map_err(|e| format!("Failed to create case dir: {}", e))?;
+    }
+    if !evidence_dir.exists() {
+        fs::create_dir(&evidence_dir).map_err(|e| format!("Failed to create evidence dir: {}", e))?;
+    }
+    Ok(evidence_dir.to_string_lossy().to_string())
+}
+
 /// Tauri příkaz pro spuštění dcfldd, analogicky k run_ewfacquire.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn run_dcfldd(
@@ -362,13 +376,26 @@ pub async fn run_dcfldd(
     // Input device
     push_key_val(&mut args_exec, &mut args_print, "if", &actual_input_device);
 
+    let case_number = dd_params.case_number.trim();
+    let evidence_number = dd_params.evidence_number.trim();
+
+    // První destination disk
+    let evidence_dir_1 = prepare_evidence_dir(&actual_output_mount, case_number, evidence_number)?;
+
+    // Pokud je druhý disk, připrav i pro něj
+    let evidence_dir_2 = if let Some(ref mount2) = second_output_mount {
+        Some(prepare_evidence_dir(mount2, case_number, evidence_number)?)
+    } else {
+        None
+    };
+
     // First output file
-    let primary_out = format!("{}/dcfldd_output.img", actual_output_mount);
+    let primary_out = format!("{}/{}.img", evidence_dir_1, evidence_number);
     push_key_val(&mut args_exec, &mut args_print, "of", &primary_out);
 
     // Second output if available
-    if let Some(mount2) = second_output_mount {
-        let second_out = format!("{}/dcfldd_output.img", mount2);
+    if let Some(evidence_dir_2) = evidence_dir_2 {
+        let second_out = format!("{}/{}.img", evidence_dir_2, evidence_number);
         push_key_val(&mut args_exec, &mut args_print, "of2", &second_out);
     }
 

@@ -515,7 +515,7 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
             .get("capacity_bytes")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        let cap_gb = (cap_bytes as f64) / 1024.0 / 1024.0 / 1024.0;
+        let cap_gb = (cap_bytes as f64) / 1_000_000_000.0;
         map.insert("capacity_bytes".to_string(), cap_bytes.to_string());
         map.insert("capacity_gb".to_string(), format!("{:.1}", cap_gb));
         capacities.push(map);
@@ -544,7 +544,7 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
             .get("capacity_bytes")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        let cap_gb = (cap_bytes as f64) / 1024.0 / 1024.0 / 1024.0;
+        let cap_gb = (cap_bytes as f64) / 1_000_000_000.0;
         map.insert("capacity_bytes".to_string(), cap_bytes.to_string());
         map.insert("capacity_gb".to_string(), format!("{:.1}", cap_gb));
         capacities.push(map);
@@ -574,7 +574,7 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
                 .get("capacity_bytes")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
-            let cap_gb = (cap_bytes as f64) / 1024.0 / 1024.0 / 1024.0;
+            let cap_gb = (cap_bytes as f64) / 1_000_000_000.0;
             map.insert("capacity_bytes".to_string(), cap_bytes.to_string());
             map.insert("capacity_gb".to_string(), format!("{:.1}", cap_gb));
             capacities.push(map);
@@ -582,26 +582,76 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
     }
     context.insert("capacities", &capacities);
 
-    // ATA security
-    let ata_security = vec![{
+    let mut encryption = Vec::new();
+
+    if let Some(source_disk) = report.get("source_disk").and_then(|v| v.as_object()) {
         let mut map = std::collections::HashMap::new();
         map.insert("bay", "1");
-        map.insert("role", "Primary");
-        map.insert("enabled", "Yes");
-        map.insert("locked", "No");
-        map
-    }];
-    context.insert("ata_security", &ata_security);
+        map.insert("role", "Source");
+        let ata = source_disk
+            .get("ata_encryption")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let sed = source_disk
+            .get("sed_encryption")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let readable = source_disk
+            .get("readable")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        map.insert("ata_encryption", if ata { "Yes" } else { "No" });
+        map.insert("sed_encryption", if sed { "Yes" } else { "No" });
+        map.insert("locked", if readable { "No" } else { "Yes" });
+        encryption.push(map);
+    }
 
-    // Encryption
-    let encryption = vec![{
+    if let Some(dest_disk) = report.get("dest_disk").and_then(|v| v.as_object()) {
         let mut map = std::collections::HashMap::new();
         map.insert("bay", "2");
-        map.insert("role", "Secondary");
-        map.insert("encrypted", "Yes");
-        map.insert("locked", "Yes");
-        map
-    }];
+        map.insert("role", "Destination");
+        let ata = dest_disk
+            .get("ata_encryption")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let sed = dest_disk
+            .get("sed_encryption")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let readable = dest_disk
+            .get("readable")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        map.insert("ata_encryption", if ata { "Yes" } else { "No" });
+        map.insert("sed_encryption", if sed { "Yes" } else { "No" });
+        map.insert("locked", if readable { "No" } else { "Yes" });
+        encryption.push(map);
+    }
+
+    if let Some(second_dest_disk) = report.get("second_dest_disk").and_then(|v| v.as_object()) {
+        if !second_dest_disk.is_empty() {
+            let mut map = std::collections::HashMap::new();
+            map.insert("bay", "3");
+            map.insert("role", "Secondary Destination");
+            let ata = second_dest_disk
+                .get("ata_encryption")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let sed = second_dest_disk
+                .get("sed_encryption")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let readable = second_dest_disk
+                .get("readable")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            map.insert("ata_encryption", if ata { "Yes" } else { "No" });
+            map.insert("sed_encryption", if sed { "Yes" } else { "No" });
+            map.insert("locked", if readable { "No" } else { "Yes" });
+            encryption.push(map);
+        }
+    }
+
     context.insert("encryption", &encryption);
 
     let mut source_partitions = Vec::new();
@@ -649,23 +699,12 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
                     .get("is_encrypted")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                map.insert(
-                    "encryption".to_string(),
-                    if is_encrypted {
-                        "Yes".to_string()
-                    } else {
-                        "No".to_string()
-                    },
-                );
-                // Pokud máš info o dešifrování, doplň, jinak nech prázdné
-                map.insert("decrypted".to_string(), "".to_string());
                 source_partitions.push(map);
             }
         }
     }
     context.insert("source_partitions", &source_partitions);
 
-    
     println!("🧾 Vyrenderuji šablonu z paměti...");
     let latex_code = Tera::one_off(TEMPLATE, &context, false)
         .map_err(|e| format!("Chyba při renderování šablony: {}", e))?;

@@ -25,7 +25,7 @@
 \textbf{Unit Serial Number:} {{ serial_number }} \hfill \textbf{Time (Local):} {{ time_local }}\\
 \textbf{Date:} {{ date }}
 
-\vspace{1em}
+\vspace{0.2em}
 \section*{Operation Parameters}
 \begin{tabular}{@{}ll}
 Mode: & {{ mode }} \\
@@ -50,7 +50,7 @@ Duration: & {{ duration }} \\
 Time at Completion: & {{ time_complete }} \\
 \end{tabular}
 
-\vspace{1em}
+\vspace{0.2em}
 \section*{Hash Information}
 \begin{tabular}{@{}ll}
 {% for hash in hashes %}
@@ -58,8 +58,9 @@ Time at Completion: & {{ time_complete }} \\
 {% endfor %}
 \end{tabular}
 
-\vspace{1em}
+
 \section*{Case Information}
+\vspace{-0.7em}
 \begin{tabular}{@{}ll}
 Case number/File Name: & {{ case_number }} \\
 Evidence number: & {{ evidence_number }} \\
@@ -67,8 +68,9 @@ Examiner: & {{ examiner }} \\
 Case Notes: & {{ notes }} \\
 \end{tabular}
 
-\vspace{1em}
+
 \section*{Segment Information}
+\vspace{-0.7em}
 \begin{tabular}{@{}ll}
 UID: & {{ segment_uid }} \\
 Destination: & {{ segment_path }} \\
@@ -78,9 +80,11 @@ File Name: & {{ segment_file }} \\
 Hash: & {{ segment_hash }} \\
 \end{tabular}
 
-\vspace{1em}
+
 \section*{Drive Information}
+\vspace{-2em}
 {\small
+\setlength{\LTleft}{0pt}
 \begin{longtable}{|l|l|l|l|l|l|}
 \hline
 Bay & Role & Serial & Model & Filesystem & Cipher \\
@@ -92,9 +96,10 @@ Bay & Role & Serial & Model & Filesystem & Cipher \\
 \end{longtable}
 }
 
-\vspace{1em}
 \section*{Drive Capacities}
+\vspace{-2em} 
 {\small
+\setlength{\LTleft}{0pt}
 \begin{longtable}{|l|l|l|l|l|}
 \hline
 Bay & Serial & Model & Capacity [bytes] & Capacity [GB] \\
@@ -106,33 +111,32 @@ Bay & Serial & Model & Capacity [bytes] & Capacity [GB] \\
 \end{longtable}
 }
 
-\vspace{1em}
-\section*{Drive ATA Security Information}
-\begin{tabular}{@{}llll}
-Bay & Role & Enabled & Locked \\
-{% for ata in ata_security %}
-{{ ata.bay }} & {{ ata.role }} & {{ ata.enabled }} & {{ ata.locked }} \\
-{% endfor %}
-\end{tabular}
-
-\vspace{1em}
 \section*{Drive Encryption Information}
-\begin{tabular}{@{}llll}
-Bay & Role & Encrypted & Locked \\
-{% for enc in encryption %}
-{{ enc.bay }} & {{ enc.role }} & {{ enc.encrypted }} & {{ enc.locked }} \\
-{% endfor %}
-\end{tabular}
-
-\vspace{1em}
-\section*{Source Partition Information}
+\vspace{-2em} 
 {\small
-\begin{longtable}{|c|c|c|c|c|c|c|}
+\setlength{\LTleft}{0pt}
+\begin{longtable}{|l|l|l|l|l|}
 \hline
-Partition & File System & Start & End & Size & Encryption & Decrypted \\
+Bay & Role & ATA Encryption & SED Encryption & Locked \\
+\hline
+{% for enc in encryption %}
+{{ enc.bay }} & {{ enc.role }} & {{ enc.ata_encryption }} & {{ enc.sed_encryption }} & {{ enc.locked }} \\
+\hline
+{% endfor %}
+\end{longtable}
+}
+
+
+\section*{Source Partition Information}
+\vspace{-2em} 
+{\small
+\setlength{\LTleft}{0pt}
+\begin{longtable}{|c|c|c|c|c|}
+\hline
+Partition & File System & Start & End & Size \\
 \hline
 {% for part in source_partitions %}
-{{ part.index }} & {{ part.fs }} & {{ part.start }} & {{ part.end }} & {{ part.size }} & {{ part.encryption }} & {{ part.decrypted }} \\
+{{ part.index }} & {{ part.fs }} & {{ part.start }} & {{ part.end }} & {{ part.size }} \\
 \hline
 {% endfor %}
 \end{longtable}

@@ -217,11 +217,7 @@
 		const diskPath = `/dev/disk/by-path/${sourceDisk.interface}`;
 		try {
 			const diskInfo = await invoke('get_disk_info', { device: diskPath }) as any;
-			console.log('Disk info:', diskInfo);
-
-			diskInfo.has_hpa = true;
-			diskInfo.dco = 12500;
-			diskInfo.readable = false;
+			
 			if (diskInfo.dco !== 0 || diskInfo.has_hpa === true || diskInfo.readable === false) {
 				warningData = {
 					dco: diskInfo.dco,
