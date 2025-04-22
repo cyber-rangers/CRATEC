@@ -4,9 +4,10 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { getContext } from 'svelte';
-	import type { ToastContext } from '@skeletonlabs/skeleton-svelte';
+	import { createToaster } from '@skeletonlabs/skeleton-svelte';
+	import { Toaster } from '@skeletonlabs/skeleton-svelte';
 
-	export const toast: ToastContext = getContext('toast');
+	export const toaster = createToaster();
 
 	import DDConfigDetailModal from '$lib/components/modals/DDConfigDetailModal.svelte';
 	import EwfConfigDetailModal from '$lib/components/modals/EwfConfigDetailModal.svelte';
@@ -25,6 +26,10 @@
 	let selectedDDConfig: any = null;
 	let showEwfModal = false;
 	let selectedEwfConfig: any = null;
+
+	let deletingId: number | null = null;
+	let deleteTimeout: any = null;
+	let holdProgress: Record<number, number> = {};
 
 	async function loadConfigs() {
 		try {
@@ -61,22 +66,24 @@
 	}
 
 	async function deleteConfig(configId: number) {
-		if (!confirm('Opravdu chcete odstranit tuto konfiguraci?')) return;
 		try {
 			await invoke('delete_or_deactivate_config', {
 				config_id: configId,
 				config_type: 'ewf'
 			});
 			console.log(`Konfigurace ${configId} byla smazána.`);
-			toast.create({
-				title: 'Success',
+			toaster.create({
+				title: 'Úspěch',
 				description: 'Konfigurace byla odstraněna.',
 				type: 'success'
 			});
+
 			await loadConfigs();
+			deletingId = null;
+			holdProgress[configId] = 0;
 		} catch (error) {
 			console.error('Chyba při mazání konfigurace:', error);
-			toast.create({
+			toaster.create({
 				title: 'Error',
 				description: 'Nepodařilo se odstranit konfiguraci.',
 				type: 'error'
@@ -85,26 +92,62 @@
 	}
 
 	async function deleteDDConfig(configId: number) {
-		if (!confirm('Opravdu chcete odstranit tuto konfiguraci?')) return;
 		try {
 			await invoke('delete_or_deactivate_config', {
 				config_id: configId,
 				config_type: 'dd'
 			});
 			console.log(`DD konfigurace ${configId} byla smazána.`);
-			toast.create({
-				title: 'Success',
+			toaster.create({
+				title: 'Úspěch',
 				description: 'Konfigurace byla odstraněna.',
 				type: 'success'
 			});
+
 			await loadConfigs();
+			deletingId = null;
+			holdProgress[configId] = 0;
 		} catch (error) {
 			console.error('Chyba při mazání DD konfigurace:', error);
-			toast.create({
+			toaster.create({
 				title: 'Error',
 				description: 'Nepodařilo se odstranit konfiguraci.',
 				type: 'error'
 			});
+		}
+	}
+
+	function handleDeleteHoldStart(configId: number, type: 'ewf' | 'dd') {
+		deletingId = configId;
+		holdProgress[configId] = 0;
+		const start = Date.now();
+		const duration = 2000;
+		function animate() {
+			if (deletingId !== configId) return;
+			const elapsed = Date.now() - start;
+			holdProgress[configId] = Math.min(elapsed / duration, 1);
+			if (holdProgress[configId] < 1) {
+				requestAnimationFrame(animate);
+			} else {
+				// Hotovo, smažeme
+				if (type === 'ewf') {
+					deleteConfig(configId);
+				} else {
+					deleteDDConfig(configId);
+				}
+				deletingId = null;
+				holdProgress[configId] = 0;
+			}
+		}
+		animate();
+		deleteTimeout = setTimeout(() => {}, duration); // pro kompatibilitu s handleDeleteHoldEnd
+	}
+
+	function handleDeleteHoldEnd(configId: number) {
+		clearTimeout(deleteTimeout);
+		if (deletingId === configId && holdProgress[configId] < 1) {
+			deletingId = null;
+			holdProgress[configId] = 0;
 		}
 	}
 
@@ -178,15 +221,29 @@
 						<article>
 							<button
 								class="btn w-full text-left"
-								on:click={() => { selectedEwfConfig = config; EwfConfigDetailModalOpen = true; }}
+								on:click={() => {
+									selectedEwfConfig = config;
+									EwfConfigDetailModalOpen = true;
+								}}
 							>
 								Info
 							</button>
 							<button
-								class="btn w-full text-left text-red-500"
-								on:click={() => deleteConfig(config.id)}
+								class="btn relative flex w-full items-center justify-center overflow-hidden text-left text-red-500"
+								on:mousedown={() => handleDeleteHoldStart(config.id, 'ewf')}
+								on:touchstart={() => handleDeleteHoldStart(config.id, 'ewf')}
+								on:mouseup={() => handleDeleteHoldEnd(config.id)}
+								on:mouseleave={() => handleDeleteHoldEnd(config.id)}
+								on:touchend={() => handleDeleteHoldEnd(config.id)}
+								disabled={!!deletingId && deletingId !== config.id}
 							>
-								Smazat
+								<span
+									class="hold-overlay"
+									style="width: {Math.round((holdProgress[config.id] || 0) * 100)}%;"
+								></span>
+								<span class="relative z-10"
+									>{deletingId === config.id ? 'Drž pro smazání…' : 'Smazat'}</span
+								>
 							</button>
 						</article>
 					{/snippet}
@@ -218,15 +275,29 @@
 						<article>
 							<button
 								class="btn w-full text-left"
-								on:click={() => { selectedDDConfig = config; DDConfigDetailModalOpen = true; }}
+								on:click={() => {
+									selectedDDConfig = config;
+									DDConfigDetailModalOpen = true;
+								}}
 							>
 								Info
 							</button>
 							<button
-								class="btn w-full text-left text-red-500"
-								on:click={() => deleteDDConfig(config.id)}
+								class="btn relative flex w-full items-center justify-center overflow-hidden text-left text-red-500"
+								on:mousedown={() => handleDeleteHoldStart(config.id, 'dd')}
+								on:touchstart={() => handleDeleteHoldStart(config.id, 'dd')}
+								on:mouseup={() => handleDeleteHoldEnd(config.id)}
+								on:mouseleave={() => handleDeleteHoldEnd(config.id)}
+								on:touchend={() => handleDeleteHoldEnd(config.id)}
+								disabled={!!deletingId && deletingId !== config.id}
 							>
-								Smazat
+								<span
+									class="hold-overlay"
+									style="width: {Math.round((holdProgress[config.id] || 0) * 100)}%;"
+								></span>
+								<span class="relative z-10"
+									>{deletingId === config.id ? 'Drž pro smazání…' : 'Smazat'}</span
+								>
 							</button>
 						</article>
 					{/snippet}
@@ -236,8 +307,17 @@
 	</section>
 </div>
 
-<DDConfigDetailModal bind:openState={DDConfigDetailModalOpen} config={selectedDDConfig} on:close={closeDDModal} />
-<EwfConfigDetailModal bind:openState={EwfConfigDetailModalOpen} config={selectedEwfConfig} on:close={closeEwfModal} />
+<DDConfigDetailModal
+	bind:openState={DDConfigDetailModalOpen}
+	config={selectedDDConfig}
+	on:close={closeDDModal}
+/>
+<EwfConfigDetailModal
+	bind:openState={EwfConfigDetailModalOpen}
+	config={selectedEwfConfig}
+	on:close={closeEwfModal}
+/>
+<Toaster {toaster}></Toaster>
 
 <style lang="postcss">
 	.container {
@@ -306,5 +386,36 @@
 	.centered-container .text {
 		font-size: 1rem;
 		color: white;
+	}
+
+	.loader {
+		border: 2px solid #f3f3f3;
+		border-top: 2px solid #d4163c;
+		border-radius: 50%;
+		width: 1em;
+		height: 1em;
+		animation: spin 1s linear infinite;
+		display: inline-block;
+		vertical-align: middle;
+	}
+
+	.hold-overlay {
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		background: rgba(212, 22, 60, 0.25);
+		transition: width 0.1s linear;
+		z-index: 1;
+		pointer-events: none;
+	}
+
+	@keyframes spin {
+		0% {
+			transform: rotate(0deg);
+		}
+		100% {
+			transform: rotate(360deg);
+		}
 	}
 </style>
