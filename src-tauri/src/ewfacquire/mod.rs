@@ -15,7 +15,6 @@ use tauri_plugin_shell::ShellExt;
 
 use tauri_plugin_shell::process::CommandEvent;
 
-/// Pomocná funkce pro provádění DB operací s opakovaným pokusem.
 fn execute_with_retry<T, F>(operation_name: &str, mut f: F, max_retries: usize) -> Result<T, String>
 where
     F: FnMut() -> Result<T, String>,
@@ -42,7 +41,7 @@ where
                     || last_error.contains("busy")
                     || last_error.contains("cannot start a transaction")
                 {
-                    let wait_ms = 500 * (1 << retries); // Exponenciální čekání
+                    let wait_ms = 500 * (1 << retries);
                     log_debug(&format!(
                         "({}) Database access issue, retry {}/{} after {}ms: {}",
                         operation_name, retries, max_retries, wait_ms, last_error
@@ -70,7 +69,6 @@ where
     Err(last_error)
 }
 
-/// Struktura parametrů EWF.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EwfParams {
     pub case_number: String,
@@ -82,7 +80,6 @@ pub struct EwfParams {
     pub bytes_to_read: i32,
 }
 
-/// Konfigurace EWF (ukázková).
 #[derive(Debug)]
 struct EwfConfig {
     confname: String,
@@ -105,7 +102,6 @@ struct EwfConfig {
     use_chunk_data: bool,
 }
 
-/// Struktura pro odesílání websocket zpráv s výstupem.
 #[derive(Serialize)]
 struct WsProcessOutput {
     #[serde(rename = "type")]
@@ -114,7 +110,6 @@ struct WsProcessOutput {
     output: String,
 }
 
-/// Struktura počátečního updatu procesu (pro frontend).
 #[derive(Serialize)]
 struct WsProcessUpdate {
     #[serde(rename = "type")]
@@ -133,7 +128,6 @@ struct WsProcessUpdate {
     out_log: Vec<String>,
 }
 
-/// Struktura pro průběžné aktualizace procesu.
 #[derive(Serialize)]
 struct WsProcessProgress {
     #[serde(rename = "type")]
@@ -144,7 +138,6 @@ struct WsProcessProgress {
     speed: Option<f64>,
 }
 
-/// Struktura pro oznámení dokončení procesu.
 #[derive(Serialize)]
 struct WsProcessDone {
     #[serde(rename = "type")]
@@ -154,20 +147,16 @@ struct WsProcessDone {
     end_datetime: String,
 }
 
-/// Tauri příkaz pro spuštění ewfacquire pomocí Tauri Shell.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn run_ewfacquire(
     app_handle: tauri::AppHandle,
     config_id: i32,
     ewf_params: EwfParams,
-    // Passed in as "/dev/disk/by-path/pci-0000:..."
     input_interface: String,
-    // Passed in similarly as ["/dev/disk/by-path/...", ...]
     output_interfaces: Vec<String>,
 ) -> Result<(), String> {
     LED_CONTROLLER.notify_process_start();
 
-    // We use these full paths only for mountpoint lookups
     let actual_input_device = format!("/dev/disk/by-path/{}", strip_dev_prefix(&input_interface));
 
     if output_interfaces.is_empty() {
@@ -209,10 +198,8 @@ pub async fn run_ewfacquire(
         None
     };
 
-    // Clone EWF params for DB usage
     let ewf_params_db = ewf_params.clone();
 
-    // Prepare stripped interface paths (without "/dev/disk/by-path/") for DB lookup
     let input_raw = strip_dev_prefix(&input_interface);
     let first_output_raw = strip_dev_prefix(&output_interfaces[0]);
     let output_interfaces_raw = output_interfaces
@@ -220,7 +207,6 @@ pub async fn run_ewfacquire(
         .map(|path| strip_dev_prefix(path))
         .collect::<Vec<_>>();
 
-    // Retrieve EWF config and insert copy log
     let (config, process_id) =
         tauri::async_runtime::spawn_blocking(move || -> Result<(EwfConfig, i64), String> {
             let mut conn = execute_with_retry(
@@ -238,7 +224,6 @@ pub async fn run_ewfacquire(
                 .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
                 .map_err(|e| format!("(DB) Chyba při zahájení transakce: {}", e))?;
 
-            // 1) Load config
             let config = {
                 let mut stmt = tx
                     .prepare(
@@ -277,7 +262,6 @@ pub async fn run_ewfacquire(
                 .map_err(|e| format!("(DB) Chyba při získávání konfigurace: {}", e))?
             };
 
-            // 2) Find source & destination interface IDs from the 'interfaces' table
             let source_disk_id: i64 = tx
                 .query_row(
                     "SELECT id FROM interface WHERE interface_path = ?1 LIMIT 1",
@@ -323,7 +307,6 @@ pub async fn run_ewfacquire(
                 None
             };
 
-            // 3) Insert into copy_log_ewf
             tx.execute(
                 "INSERT INTO copy_log_ewf (
                     config_id,
@@ -357,7 +340,6 @@ pub async fn run_ewfacquire(
 
             let copy_log_id = tx.last_insert_rowid();
 
-            // 4) Insert into copy_process
             let process_result = tx.execute(
                 "INSERT INTO copy_process (triggered_by_ewf) VALUES (?1)",
                 rusqlite::params![copy_log_id],
@@ -383,7 +365,6 @@ pub async fn run_ewfacquire(
         .await
         .map_err(|e| format!("(async) Chyba při spawn_blocking: {}", e))??;
 
-    // Notify front-end that the acquisition started
     let mut destination_disks = vec![actual_output_mount.clone()];
     if let Some(second_mount) = &second_output_mount {
         destination_disks.push(second_mount.clone());
@@ -418,7 +399,6 @@ pub async fn run_ewfacquire(
         print.push(format!("\"{}\"", value));
     }
 
-    // Všechny původní argumenty - beze změny
     push_pair(&mut args_exec, &mut args_print, "-A", &config.codepage);
     push_pair(
         &mut args_exec,
@@ -468,7 +448,7 @@ pub async fn run_ewfacquire(
         "-g",
         &config.granularity_sectors,
     );
-   
+
     push_pair(&mut args_exec, &mut args_print, "-m", "fixed");
     push_pair(&mut args_exec, &mut args_print, "-M", "physical");
     if config.notes == "ask" {
@@ -501,16 +481,13 @@ pub async fn run_ewfacquire(
         );
     }
 
-    // Parse the read_retry_count as an integer or use 2 as default
     let retry_count = config.read_retry_count.parse::<i32>().unwrap_or(2);
 
-    // Add flag and value directly to args_exec without quotes
     args_exec.push("-r".to_string());
     args_exec.push(retry_count.to_string());
 
-    // For printing purposes, add the flag but use the integer directly without quotes
     args_print.push("-r".to_string());
-    args_print.push(retry_count.to_string()); // No quotes around integer
+    args_print.push(retry_count.to_string());
 
     if config.swap_byte_pairs {
         args_exec.push("-s".to_string());
@@ -518,9 +495,7 @@ pub async fn run_ewfacquire(
     }
     push_pair(&mut args_exec, &mut args_print, "-S", &config.segment_size);
 
-    // After pushing other parameters, add the -d parameter for hash types
     if !config.hash_types.is_empty() && config.hash_types != "[]" {
-        // Remove any brackets if present and trim
         let hash_types = config
             .hash_types
             .replace(['[', ']', '"', '\''], "")
@@ -533,8 +508,11 @@ pub async fn run_ewfacquire(
         }
     }
 
-    
-    fn prepare_evidence_dir(base: &str, case_number: &str, evidence_number: &str) -> Result<String, String> {
+    fn prepare_evidence_dir(
+        base: &str,
+        case_number: &str,
+        evidence_number: &str,
+    ) -> Result<String, String> {
         let case_dir = Path::new(base).join(case_number);
         let evidence_dir = case_dir.join(evidence_number);
 
@@ -542,7 +520,8 @@ pub async fn run_ewfacquire(
             fs::create_dir(&case_dir).map_err(|e| format!("Failed to create case dir: {}", e))?;
         }
         if !evidence_dir.exists() {
-            fs::create_dir(&evidence_dir).map_err(|e| format!("Failed to create evidence dir: {}", e))?;
+            fs::create_dir(&evidence_dir)
+                .map_err(|e| format!("Failed to create evidence dir: {}", e))?;
         }
         Ok(evidence_dir.to_string_lossy().to_string())
     }
@@ -553,7 +532,11 @@ pub async fn run_ewfacquire(
     let evidence_dir_1 = prepare_evidence_dir(&actual_output_mount, case_number, evidence_number)?;
 
     let evidence_dir_2 = if let Some(second_mount) = &second_output_mount {
-        Some(prepare_evidence_dir(second_mount, case_number, evidence_number)?)
+        Some(prepare_evidence_dir(
+            second_mount,
+            case_number,
+            evidence_number,
+        )?)
     } else {
         None
     };
@@ -565,7 +548,7 @@ pub async fn run_ewfacquire(
         &format!("{}/copy", evidence_dir_1),
     );
 
-    // A teď místo původního push_pair pro -t a -2 použij:
+
     push_pair(
         &mut args_exec,
         &mut args_print,
@@ -601,9 +584,7 @@ pub async fn run_ewfacquire(
     let full_command_print = format!("sudo ewfacquire {}", args_print.join(" "));
     println!("Spouštím příkaz: {}", full_command_print);
 
-    // Zbytek funkce zůstává stejný...
     let shell = app_handle.shell();
-    // spawn() returns a tuple: (Receiver<CommandEvent>, CommandChild)
     let (mut rx, _child) = shell
         .command("sudo")
         .args(["ewfacquire"])
@@ -611,13 +592,10 @@ pub async fn run_ewfacquire(
         .spawn()
         .map_err(|e| format!("(Command) Failed to spawn command: {}", e))?;
 
-    // Real-time reading of stdout/stderr from the RX channel
-    // Add variables to capture hash values
     let mut md5_hash: Option<String> = None;
     let mut sha1_hash: Option<String> = None;
     let mut sha256_hash: Option<String> = None;
 
-    // Získání copy_log_id přes copy_process.triggered_by_ewf:
     let copy_log_id: i64 = {
         let conn = crate::db::create_new_connection()
             .map_err(|e| format!("Failed to create connection: {}", e))?;
@@ -632,7 +610,6 @@ pub async fn run_ewfacquire(
     while let Some(event) = rx.recv().await {
         match event {
             CommandEvent::Stdout(line) => {
-                // Here you can store line into DB, do websocket broadcasting, parse for progress, etc.
                 {
                     let conn = crate::db::create_new_connection()
                         .map_err(|e| format!("(DB stdout) Failed to create connection: {}", e))?;
@@ -650,7 +627,6 @@ pub async fn run_ewfacquire(
                 let json_output = serde_json::to_string(&output_msg).unwrap();
                 websocket::broadcast_message(&json_output).await;
 
-                // Example of progress regex matching
                 lazy_static! {
                     static ref PROGRESS_REGEX: Regex = Regex::new(r"Status: at (\d+)%\.").unwrap();
                     static ref COMPLETION_REGEX: Regex = Regex::new(
@@ -695,7 +671,7 @@ pub async fn run_ewfacquire(
                         "KiB" => 1.0 / 1024.0,
                         "GiB" => 1024.0,
                         "TiB" => 1024.0 * 1024.0,
-                        _ => 1.0, // MiB jako výchozí
+                        _ => 1.0,
                     };
 
                     let speed_mib = speed_raw * multiplier;
@@ -711,7 +687,6 @@ pub async fn run_ewfacquire(
                     websocket::broadcast_message(&json).await;
                 }
 
-                // Extract hashes from output
                 if let Some(caps) = MD5_REGEX.captures(&line_str) {
                     md5_hash = Some(caps[1].to_string());
                     println!("Found MD5 hash: {}", caps[1].to_string());
@@ -736,7 +711,6 @@ pub async fn run_ewfacquire(
                 }
             }
             CommandEvent::Stderr(line) => {
-                // Similar DB logic for stderr
                 let log_line = format!("STDERR: {}", String::from_utf8_lossy(&line));
                 let conn = crate::db::create_new_connection()
                     .map_err(|e| format!("(DB stderr) Failed to create connection: {}", e))?;
@@ -749,7 +723,6 @@ pub async fn run_ewfacquire(
             CommandEvent::Terminated(exit_code) => {
                 LED_CONTROLLER.notify_process_end();
 
-                // Process has finished. 0 => success; otherwise an error code
                 let final_status = if exit_code.code.unwrap_or(-1) == 0 {
                     "done"
                 } else {
@@ -761,17 +734,19 @@ pub async fn run_ewfacquire(
                     final_status
                 );
 
-                // Capture the end time
+                if final_status == "done" {
+                    if let Err(e) = crate::report::generate_report(process_id) {
+                        eprintln!("Chyba při generování reportu: {}", e);
+                    }
+                }
+
                 let end_time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-                // Clone it for the closure
                 let end_time_for_db = end_time.clone();
 
-                // Perform final DB updates in a blocking task
                 tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
                     let conn = crate::db::create_new_connection()
                         .map_err(|e| format!("(DB) Error creating final connection: {}", e))?;
 
-                    // Update copy_log_ewf table - use end_time_for_db here
                     let mut update_sql = format!(
                         "UPDATE copy_log_ewf SET status = '{}', end_datetime = '{}' ",
                         final_status, end_time_for_db
@@ -792,10 +767,9 @@ pub async fn run_ewfacquire(
                     conn.execute(&update_sql, [])
                         .map_err(|e| format!("Error updating copy_log_ewf: {}", e))?;
 
-                    // Update copy_process table - CHANGE THIS LINE to use end_time_for_db
                     conn.execute(
                         "UPDATE copy_process SET status = ?, end_datetime = ? WHERE id = ?",
-                        params![final_status, end_time_for_db, process_id], // Use end_time_for_db instead of end_time
+                        params![final_status, end_time_for_db, process_id],
                     )
                     .map_err(|e| format!("Error updating copy_process: {}", e))?;
 
@@ -804,17 +778,15 @@ pub async fn run_ewfacquire(
                 .await
                 .map_err(|e| e.to_string())??;
 
-                // Send ProcessDone message via websocket - original end_time is still available
                 let process_done = WsProcessDone {
                     msg_type: "ProcessDone".to_string(),
                     id: process_id,
                     status: final_status.to_string(),
-                    end_datetime: end_time, // Now this works because we didn't move the original
+                    end_datetime: end_time,
                 };
                 let json_done = serde_json::to_string(&process_done).unwrap_or_default();
                 websocket::broadcast_message(&json_done).await;
 
-                // We can break from the loop once the process is terminated
                 break;
             }
             _ => (),
@@ -824,8 +796,6 @@ pub async fn run_ewfacquire(
     Ok(())
 }
 
-/// Utility function that strips "/dev/disk/by-path/" prefix from path
-/// so we can find the raw interface
 fn strip_dev_prefix(full_path: &str) -> String {
     full_path
         .trim_start_matches("/dev/disk/by-path/")

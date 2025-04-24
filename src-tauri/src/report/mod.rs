@@ -860,10 +860,80 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
     fs::write("/home/master/Dokumenty/debug_output.tex", &latex_code)
         .map_err(|e| format!("Nelze uložit debug_output.tex: {}", e))?;
 
+    // Najdi cestu pro uložení PDF na dest_disk
+    let mut dest_pdf_path = None;
+    if let Some(dest_disk) = report.get("dest_disk").and_then(|v| v.as_object()) {
+        if let Some(partitions) = dest_disk.get("partitions").and_then(|v| v.as_array()) {
+            if let Some(part) = partitions
+                .iter()
+                .find(|p| p.get("mountpoint").and_then(|m| m.as_str()).is_some())
+            {
+                let mountpoint = part.get("mountpoint").and_then(|v| v.as_str()).unwrap_or("");
+                let case_number = report
+                    .get("log_record")
+                    .and_then(|lr| lr.get("case_number"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let evidence_number = report
+                    .get("log_record")
+                    .and_then(|lr| lr.get("evidence_number"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                dest_pdf_path = Some(format!("{}/{}/{}/output.pdf", mountpoint, case_number, evidence_number));
+                // Vytvoř složku pokud neexistuje
+                let dir_path = format!("{}/{}/{}", mountpoint, case_number, evidence_number);
+                std::fs::create_dir_all(&dir_path).ok();
+            }
+        }
+    }
+
+    // Najdi cestu pro uložení PDF na second_dest_disk (pokud existuje)
+    let mut second_dest_pdf_path = None;
+    if let Some(second_dest_disk) = report.get("second_dest_disk").and_then(|v| v.as_object()) {
+        if !second_dest_disk.is_empty() {
+            if let Some(partitions) = second_dest_disk.get("partitions").and_then(|v| v.as_array()) {
+                if let Some(part) = partitions
+                    .iter()
+                    .find(|p| p.get("mountpoint").and_then(|m| m.as_str()).is_some())
+                {
+                    let mountpoint = part.get("mountpoint").and_then(|v| v.as_str()).unwrap_or("");
+                    let case_number = report
+                        .get("log_record")
+                        .and_then(|lr| lr.get("case_number"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let evidence_number = report
+                        .get("log_record")
+                        .and_then(|lr| lr.get("evidence_number"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    second_dest_pdf_path = Some(format!("{}/{}/{}/output.pdf", mountpoint, case_number, evidence_number));
+                    // Vytvoř složku pokud neexistuje
+                    let dir_path = format!("{}/{}/{}", mountpoint, case_number, evidence_number);
+                    std::fs::create_dir_all(&dir_path).ok();
+                }
+            }
+        }
+    }
+
+    // Uložení PDF do správných složek
     println!("🧾 Kompiluji PDF pomocí Tectonic...");
     match tectonic::latex_to_pdf(&latex_code) {
         Ok(pdf_data) => {
-            fs::write("/home/master/Dokumenty/output.pdf", pdf_data)
+            // Ulož na dest_disk
+            if let Some(ref path) = dest_pdf_path {
+                fs::write(path, &pdf_data)
+                    .map_err(|e| format!("Nelze uložit report na dest_disk: {}", e))?;
+                println!("✅ PDF uloženo na dest_disk: {}", path);
+            }
+            // Ulož na second_dest_disk pokud existuje
+            if let Some(ref path) = second_dest_pdf_path {
+                fs::write(path, &pdf_data)
+                    .map_err(|e| format!("Nelze uložit report na second_dest_disk: {}", e))?;
+                println!("✅ PDF uloženo na second_dest_disk: {}", path);
+            }
+            // Pro debug účely stále ukládej i do domovské složky
+            fs::write("/home/master/Dokumenty/output.pdf", &pdf_data)
                 .map_err(|e| format!("Nelze uložit output.pdf: {}", e))?;
             println!("✅ PDF úspěšně vytvořeno: output.pdf");
         }
