@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Konec TEST */
 
 
-    report::generate_report(4)?;
+   report::generate_report(4)?;
     
     
 

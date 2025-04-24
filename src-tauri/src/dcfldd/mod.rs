@@ -461,7 +461,7 @@ pub async fn run_dcfldd(
             }
 
             // Create hash log file
-            let hash_log_path = format!("{}/hash.log", actual_output_mount);
+            let hash_log_path = format!("{}/hash.log", evidence_dir_1);
             push_key_val(&mut args_exec, &mut args_print, "hashlog", &hash_log_path);
         }
     }
@@ -487,7 +487,7 @@ pub async fn run_dcfldd(
     push_key_val(&mut args_exec, &mut args_print, "statusinterval", "150000");
 
     // Create error log
-    let error_log_path = format!("{}/error.log", actual_output_mount);
+    let error_log_path = format!("{}/error.log", evidence_dir_1);
     push_key_val(&mut args_exec, &mut args_print, "errlog", &error_log_path);
 
     // Print the command with more detail

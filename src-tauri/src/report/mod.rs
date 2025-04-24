@@ -175,7 +175,62 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
         .unwrap_or("N/A");
     context.insert("hash_type", hash_types);
 
-    context.insert("image_path", "/var/reports/.../Kingston480GB\\_SATA");
+    let mut image_path = String::new();
+    if let Some(dest_disk) = report.get("dest_disk").and_then(|v| v.as_object()) {
+        if let Some(partitions) = dest_disk.get("partitions").and_then(|v| v.as_array()) {
+            if let Some(part) = partitions
+                .iter()
+                .find(|p| p.get("mountpoint").and_then(|m| m.as_str()).is_some())
+            {
+                let mountpoint = part
+                    .get("mountpoint")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let case_number = report
+                    .get("log_record")
+                    .and_then(|lr| lr.get("case_number"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let evidence_number = report
+                    .get("log_record")
+                    .and_then(|lr| lr.get("evidence_number"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                image_path = format!("{}/{}/{}/", mountpoint, case_number, evidence_number);
+            }
+        }
+    }
+    context.insert("image_path", &image_path);
+
+    // Second image path (pokud existuje second_dest_disk)
+    let mut segment2_path = String::new();
+    if let Some(second_dest_disk) = report.get("second_dest_disk").and_then(|v| v.as_object()) {
+        if !second_dest_disk.is_empty() {
+            if let Some(partitions) = second_dest_disk.get("partitions").and_then(|v| v.as_array()) {
+                if let Some(part) = partitions
+                    .iter()
+                    .find(|p| p.get("mountpoint").and_then(|m| m.as_str()).is_some())
+                {
+                    let mountpoint = part
+                        .get("mountpoint")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let case_number = report
+                        .get("log_record")
+                        .and_then(|lr| lr.get("case_number"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let evidence_number = report
+                        .get("log_record")
+                        .and_then(|lr| lr.get("evidence_number"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    segment2_path = format!("{}/{}/{}/", mountpoint, case_number, evidence_number);
+                }
+            }
+        }
+    }
+    context.insert("segment2_path", &segment2_path);
 
     // lba_count nastavíme na hodnotu capacity_bytes ze source_disk
     let lba_count_val = report
@@ -362,12 +417,105 @@ pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
         .unwrap_or("");
     context.insert("notes", notes);
 
-    context.insert("segment_uid", "SEG123456");
-    context.insert("segment_path", "/segments/seg123456");
-    context.insert("segment_fs", "NTFS");
-    context.insert("segment_serial", "SEG-SERIAL-001");
-    context.insert("segment_file", "segment\\_file.img");
-    context.insert("segment_hash", "seg\\_hash\\_abc123");
+    let mut segment_uid = String::new();
+    let mut segment_path = String::new();
+    let mut segment_fs = String::new();
+    let mut segment_serial = String::new();
+    let mut segment_file = String::new();
+
+    if let Some(dest_disk) = report.get("dest_disk").and_then(|v| v.as_object()) {
+        // Najdi partition s mountpointem
+        if let Some(partitions) = dest_disk.get("partitions").and_then(|v| v.as_array()) {
+            if let Some(part) = partitions
+                .iter()
+                .find(|p| p.get("mountpoint").and_then(|m| m.as_str()).is_some())
+            {
+                segment_uid = part.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let mountpoint = part
+                    .get("mountpoint")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let case_number = report
+                    .get("log_record")
+                    .and_then(|lr| lr.get("case_number"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let evidence_number = report
+                    .get("log_record")
+                    .and_then(|lr| lr.get("evidence_number"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                segment_path = format!("{}/{}/{}/", mountpoint, case_number, evidence_number);
+                segment_fs = part
+                    .get("filesystem")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                segment_serial = dest_disk
+                    .get("serial")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                segment_file = evidence_number.to_string();
+            }
+        }
+    }
+    context.insert("segment_uid", &segment_uid);
+    context.insert("segment_path", &segment_path);
+    context.insert("segment_fs", &segment_fs);
+    context.insert("segment_serial", &segment_serial);
+    context.insert("segment_file", &segment_file);
+
+    // --- Segment Information (Second Destination) ---
+    let mut segment2_uid = String::new();
+    let mut segment2_fs = String::new();
+    let mut segment2_serial = String::new();
+    let mut segment2_file = String::new();
+
+    if let Some(second_dest_disk) = report.get("second_dest_disk").and_then(|v| v.as_object()) {
+        if !second_dest_disk.is_empty() {
+            if let Some(partitions) = second_dest_disk
+                .get("partitions")
+                .and_then(|v| v.as_array())
+            {
+                if let Some(part) = partitions
+                    .iter()
+                    .find(|p| p.get("mountpoint").and_then(|m| m.as_str()).is_some())
+                {
+                    segment2_uid = part.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let mountpoint = part
+                        .get("mountpoint")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let case_number = report
+                        .get("log_record")
+                        .and_then(|lr| lr.get("case_number"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let evidence_number = report
+                        .get("log_record")
+                        .and_then(|lr| lr.get("evidence_number"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    segment2_fs = part
+                        .get("filesystem")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    segment2_serial = second_dest_disk
+                        .get("serial")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    segment2_file = evidence_number.to_string();
+                }
+            }
+        }
+    }
+    context.insert("segment2_uid", &segment2_uid);
+    context.insert("segment2_fs", &segment2_fs);
+    context.insert("segment2_serial", &segment2_serial);
+    context.insert("segment2_file", &segment2_file);
 
     let mut drives = Vec::new();
 

@@ -625,7 +625,7 @@
             <input
                 class="input"
                 name="read_retry_count"
-                type="number"
+                type="text"
                 bind:value={formData.read_retry_count}
                 on:focus={() => openKeyboard('read_retry_count')}
                 placeholder="2"

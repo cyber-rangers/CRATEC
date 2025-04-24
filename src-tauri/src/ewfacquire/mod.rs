@@ -468,12 +468,7 @@ pub async fn run_ewfacquire(
         "-g",
         &config.granularity_sectors,
     );
-    push_pair(
-        &mut args_exec,
-        &mut args_print,
-        "-l",
-        &format!("{}/copy.log", actual_output_mount),
-    );
+   
     push_pair(&mut args_exec, &mut args_print, "-m", "fixed");
     push_pair(&mut args_exec, &mut args_print, "-M", "physical");
     if config.notes == "ask" {
@@ -562,6 +557,13 @@ pub async fn run_ewfacquire(
     } else {
         None
     };
+
+    push_pair(
+        &mut args_exec,
+        &mut args_print,
+        "-l",
+        &format!("{}/copy", evidence_dir_1),
+    );
 
     // A teď místo původního push_pair pro -t a -2 použij:
     push_pair(

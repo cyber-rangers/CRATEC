@@ -119,7 +119,11 @@ pub struct PartitionInfo {
     pub start_sector: u64,
     pub end_sector: u64,
     pub filesystem: Option<String>,
-    pub is_encrypted: bool,
+    pub fssize: Option<u64>,
+    pub fsused: Option<u64>,
+    pub fsuse_percent: Option<String>,
+    pub uuid: Option<String>,
+    pub mountpoint: Option<String>,
 }
 
 /// Struktura s informacemi o disku.
@@ -280,19 +284,28 @@ pub fn get_disk_info(device: &str) -> Result<DiskInfo, String> {
                 .as_str()
                 .map(|s| s.to_string())
                 .or(Some("unknown".to_string()));
-            let is_encrypted = false;
             let end_sector = if part_size > 0 {
                 start_sector + (part_size / 512) - 1
             } else {
                 start_sector
             };
 
+            let fssize = child["fssize"].as_u64();
+            let fsused = child["fsused"].as_u64();
+            let fsuse_percent = child["fsuse%"].as_str().map(|s| s.to_string());
+            let uuid = child["uuid"].as_str().map(|s| s.to_string());
+            let mountpoint = child["mountpoint"].as_str().map(|s| s.to_string());
+
             partitions.push(PartitionInfo {
                 index,
                 start_sector,
                 end_sector,
                 filesystem,
-                is_encrypted,
+                fssize,
+                fsused,
+                fsuse_percent,
+                uuid,
+                mountpoint,
             });
         }
     }

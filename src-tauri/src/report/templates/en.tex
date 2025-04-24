@@ -8,6 +8,7 @@
 \usepackage{enumitem}
 \usepackage{helvet}
 \usepackage{graphicx}
+\usepackage{multirow} 
 \renewcommand{\familydefault}{\sfdefault}
 
 \geometry{margin=0.5in}
@@ -32,6 +33,9 @@ Mode: & {{ mode }} \\
 Method: & {{ method }} \\
 Hash: & {{ hash_type }} \\
 Image Path: & {{ image_path }} \\
+{% if segment2_path and segment2_path | length > 0 %}
+Second Image Path: & {{ segment2_path }} \\
+{% endif %}
 LBA Count: & {{ lba_count }} \\
 Source Logical Sector Size: & {{ sector_size }} \\
 Segment Size: & {{ segment_size }} \\
@@ -71,13 +75,22 @@ Case Notes: & {{ notes }} \\
 
 \section*{Segment Information}
 \vspace{-0.7em}
-\begin{tabular}{@{}ll}
-UID: & {{ segment_uid }} \\
-Destination: & {{ segment_path }} \\
-Filesystem: & {{ segment_fs }} \\
-Serial: & {{ segment_serial }} \\
-File Name: & {{ segment_file }} \\
-Hash: & {{ segment_hash }} \\
+\begin{tabular}{@{}l p{7cm}}
+    \multirow{5}{*}{\textbf{Destination}} 
+        & UID:         \hspace{1em} {{ segment_uid }} \\
+    & Destination:    \hspace{1em} {{ segment_path }} \\
+    & Filesystem:     \hspace{1em} {{ segment_fs }} \\
+    & Serial:         \hspace{1em} {{ segment_serial }} \\
+    & File Name:      \hspace{1em} {{ segment_file }} \\
+    {% if segment2_path %}
+    \\[-0.5em]
+    \multirow{5}{*}{\textbf{Second destination}} 
+        & UID:         \hspace{1em} {{ segment2_uid }} \\
+    & Destination:    \hspace{1em} {{ segment2_path }} \\
+    & Filesystem:     \hspace{1em} {{ segment2_fs }} \\
+    & Serial:         \hspace{1em} {{ segment2_serial }} \\
+    & File Name:      \hspace{1em} {{ segment2_file }} \\
+    {% endif %}
 \end{tabular}
 
 
