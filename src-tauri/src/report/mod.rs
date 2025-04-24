@@ -1,1052 +1,547 @@
-use crate::db::DB_POOL;
-use crate::disk_utils;
+//! Modul pro tvorbu PDF reportu (s detailními debug-výpisy)
+
+use crate::{db::DB_POOL, disk_utils};
+
 use chrono::{Local, NaiveDateTime};
-use rusqlite::{params, Connection, Row, Statement};
+use once_cell::sync::Lazy;
+use rusqlite::{Row, Statement};
 use serde_json::{Map, Value};
 use std::fs;
-use tectonic;
 use tera::{Context, Tera};
 
 static TEMPLATE: &str = include_str!("./templates/en.tex");
 
-fn row_to_json(row: &Row, stmt: &Statement) -> Value {
-    let mut obj = Map::new();
-    for (i, name) in stmt.column_names().iter().enumerate() {
-        let value = if let Ok(s) = row.get::<_, String>(i) {
-            Value::String(s)
-        } else if let Ok(n) = row.get::<_, i64>(i) {
-            Value::Number(serde_json::Number::from(n))
+/// ----------------- malé pomůcky ------------------------------------------
+fn vstr<S: Into<String>>(s: S) -> Value {
+    Value::String(s.into())
+}
+fn vu64(n: u64) -> Value {
+    Value::Number(n.into())
+}
+static EMPTY_MAP: Lazy<Map<String, Value>> = Lazy::new(Map::new);
+
+trait StrExt {
+    fn if_empty_then<'a>(&'a self, alt: &'a str) -> &'a str;
+}
+impl StrExt for str {
+    fn if_empty_then<'a>(&'a self, alt: &'a str) -> &'a str {
+        if self.is_empty() {
+            alt
         } else {
-            Value::Null
-        };
-        obj.insert(name.to_string(), value);
+            self
+        }
+    }
+}
+
+/// Vypůjčené &str přímo z JSONu
+fn gs<'a>(o: &'a Map<String, Value>, k: &str) -> &'a str {
+    o.get(k).and_then(Value::as_str).unwrap_or("")
+}
+fn gu(o: &Map<String, Value>, k: &str) -> u64 {
+    o.get(k).and_then(Value::as_u64).unwrap_or(0)
+}
+
+/// Převod řádku SQL → JSON objekt
+fn row_to_json_with_cols(row: &Row, cols: &[String]) -> Value {
+    let mut obj = Map::new();
+    for (i, c) in cols.iter().enumerate() {
+        let v = row
+            .get::<_, String>(i)
+            .map(Value::String)
+            .or_else(|_| row.get::<_, i64>(i).map(|n| Value::Number(n.into())))
+            .unwrap_or(Value::Null);
+        obj.insert(c.clone(), v);
     }
     Value::Object(obj)
 }
 
-fn row_to_json_with_columns(row: &Row, column_names: &[String]) -> Value {
-    let mut obj = Map::new();
-    for (i, name) in column_names.iter().enumerate() {
-        let value = if let Ok(s) = row.get::<_, String>(i) {
-            Value::String(s)
-        } else if let Ok(n) = row.get::<_, i64>(i) {
-            Value::Number(serde_json::Number::from(n))
-        } else {
-            Value::Null
-        };
-        obj.insert(name.clone(), value);
-    }
-    Value::Object(obj)
-}
-
-fn get_interface_path(conn: &rusqlite::Connection, interface_id: i64) -> Option<String> {
+/// Získá `interface_path` pro daný disk-ID
+fn get_interface_path(conn: &rusqlite::Connection, id: i64) -> Option<String> {
     conn.query_row(
-        "SELECT interface_path FROM interface WHERE id = ?1",
-        rusqlite::params![interface_id],
-        |row| row.get(0),
+        "SELECT interface_path FROM interface WHERE id=?",
+        [id],
+        |r| r.get(0),
     )
     .ok()
 }
 
-/// Nová funkce generate_report, která zatím přijímá copy_process id a nedělá nic dalšího.
-pub fn generate_report(copy_process_id: i64) -> Result<(), String> {
-    // 1) Získání dat z DB pomocí get_report_json_data
-    let report_json = get_report_json_data(copy_process_id)?;
+/// --------------------------------------------------------------------------
+pub fn generate_report(id: i64) -> Result<(), String> {
+    println!("▶️  generate_report({id}) – START");
 
-    // Aktualizujeme report_json o diskové informace získané z log_record
-    let mut report = match report_json {
-        serde_json::Value::Object(map) => map,
-        _ => return Err("Report JSON není objekt.".into()),
-    };
-
-    // Hledáme v reportu log_record a vždy vložíme pole source_disk, dest_disk a second_dest_disk
-    if let Some(log_value) = report.get("log_record").cloned() {
-        if let Some(log_obj) = log_value.as_object() {
-            let mut pooled_conn = DB_POOL.get_connection().unwrap();
-            let conn = pooled_conn.connection();
-
-            // Získání source_disk
-            let source_disk = if let Some(source_disk_id) =
-                log_obj.get("source_disk_id").and_then(|v| v.as_i64())
-            {
-                if source_disk_id != 0 {
-                    if let Some(interface_path) = get_interface_path(conn, source_disk_id) {
-                        let path = format!("/dev/disk/by-path/{}", interface_path);
-                        println!("SOURCE DISK PAH :{} ", path);
-                        let disk_info = disk_utils::get_disk_info(&path)?;
-                        serde_json::to_value(disk_info).map_err(|e| {
-                            format!("Chyba při serializaci disk info (source): {}", e)
-                        })?
-                    } else {
-                        serde_json::Value::String(String::new())
-                    }
-                } else {
-                    serde_json::Value::String(String::new())
-                }
-            } else {
-                serde_json::Value::String(String::new())
-            };
-            report.insert("source_disk".into(), source_disk);
-
-            // Získání dest_disk
-            let dest_disk = if let Some(dest_disk_id) =
-                log_obj.get("dest_disk_id").and_then(|v| v.as_i64())
-            {
-                if dest_disk_id != 0 {
-                    if let Some(interface_path) = get_interface_path(conn, dest_disk_id) {
-                        let path = format!("/dev/disk/by-path/{}", interface_path);
-                        println!("DEST DISK PAH :{} ", path);
-                        let disk_info = disk_utils::get_disk_info(&path)?;
-                        serde_json::to_value(disk_info)
-                            .map_err(|e| format!("Chyba při serializaci disk info (dest): {}", e))?
-                    } else {
-                        serde_json::Value::String(String::new())
-                    }
-                } else {
-                    serde_json::Value::String(String::new())
-                }
-            } else {
-                serde_json::Value::String(String::new())
-            };
-            report.insert("dest_disk".into(), dest_disk);
-
-            // Získání second_dest_disk (vždy vloženo, může být prázdné)
-            let second_dest_disk = if let Some(second_dest_disk_id) =
-                log_obj.get("second_dest_disk_id").and_then(|v| v.as_i64())
-            {
-                if second_dest_disk_id != 0 {
-                    if let Some(interface_path) = get_interface_path(conn, second_dest_disk_id) {
-                        let path = format!("/dev/disk/by-path/{}", interface_path);
-                        println!("SECOND DISK PAH :{} ", path);
-                        let disk_info = disk_utils::get_disk_info(&path)?;
-                        serde_json::to_value(disk_info).map_err(|e| {
-                            format!("Chyba při serializaci disk info (second): {}", e)
-                        })?
-                    } else {
-                        serde_json::Value::String(String::new())
-                    }
-                } else {
-                    serde_json::Value::String(String::new())
-                }
-            } else {
-                serde_json::Value::String(String::new())
-            };
-            report.insert("second_dest_disk".into(), second_dest_disk);
-        }
-    }
-
-    // Vypsání modifikovaného reportu do konzole ve formátu "pretty printed" JSON.
+    // 1️⃣  Načti agregovaný JSON z DB
+    let mut report = get_report_json_data(id)?
+        .as_object()
+        .cloned()
+        .ok_or("Report JSON není objekt")?;
+    let log_map = report["log_record"]
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
     println!(
-        "{}",
-        serde_json::to_string_pretty(&serde_json::Value::Object(report.clone()))
-            .map_err(|e| format!("Chyba při serializaci JSON: {}", e))?
+        "✅  data z DB – klíče: {:?}",
+        report.keys().collect::<Vec<_>>()
     );
 
-    // 2) Nyní vytvoříme Tera context, kam vložíme mock data.
-    let mut context = Context::new();
+    // --- helper: načti disk podle ID v logu
+    let load_disk = |key: &str| -> Result<Value, String> {
+        let disk_id = log_map.get(key).and_then(Value::as_i64).unwrap_or(0);
+        if disk_id == 0 {
+            return Ok(Value::Null);
+        }
+        let mut pool = DB_POOL.get_connection().map_err(|e| e.to_string())?;
+        let path = get_interface_path(pool.connection(), disk_id)
+            .map(|p| format!("/dev/disk/by-path/{p}"))
+            .ok_or_else(|| format!("interface_path chybí pro disk {disk_id}"))?;
+        println!("🔍  {key}: disk_utils::get_disk_info({path})");
+        disk_utils::get_disk_info(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|d| serde_json::to_value(d).map_err(|e| e.to_string()))
+    };
+    report.insert("source_disk".into(), load_disk("source_disk_id")?);
+    report.insert("dest_disk".into(), load_disk("dest_disk_id")?);
+    report.insert("second_dest_disk".into(), load_disk("second_dest_disk_id")?);
+    println!("✅  disky načteny");
 
-    // Aktuální datum a čas
+    // 2️⃣  Sestavení Tera Contextu
+    let mut ctx = Context::new();
     let now = Local::now();
-    context.insert("date", &now.format("%b %d, %Y").to_string());
-    context.insert("time_local", &now.format("%H:%M:%S (%Z)").to_string());
-    context.insert("software_hash", "75f1c14d734ea09147330fae210faa54");
-    context.insert("build_date", "Jul 08, 2024 13:38:46 PDT");
-    context.insert("serial_number", "117495");
-    context.insert("mode", "DriveToFile");
+    ctx.insert("date", &now.format("%b %d, %Y").to_string());
+    ctx.insert("time_local", &now.format("%H:%M:%S (%Z)").to_string());
+    ctx.insert("software_hash", "75f1c14d734ea09147330fae210faa54");
+    ctx.insert("build_date", "Jul 08, 2024 13:38:46 PDT");
+    ctx.insert("serial_number", "117495");
 
-    // Nastavení metody podle toho, co bylo využito (triggered_by_ewf či triggered_by_dd)
-    let method = if report
-        .get("copy_process")
-        .and_then(|cp| cp.get("triggered_by_ewf"))
-        .and_then(|v| v.as_i64())
-        .is_some()
-    {
-        "ewfacquire"
-    } else {
-        "dcfldd"
-    };
-    context.insert("method", method);
+    let cfg = report["config_record"].as_object().unwrap();
+    let proc = report["copy_process"].as_object().unwrap();
+    ctx.insert("mode", "DriveToFile");
+    ctx.insert(
+        "method",
+        if proc.get("triggered_by_ewf").is_some() {
+            "ewfacquire"
+        } else {
+            "dcfldd"
+        },
+    );
 
-    // Pole "hash_type" nastavíme dle hodnoty "hash_types" z config_record
-    let hash_types = report
-        .get("config_record")
-        .and_then(|config| config.get("hash_types"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("N/A");
-    context.insert("hash_type", hash_types);
+    let hash_types = gs(cfg, "hash_types");
+    ctx.insert("hash_type", hash_types);
+    ctx.insert("compression_method", gs(cfg, "compression_method"));
+    ctx.insert("compression_level", gs(cfg, "compression_level"));
+    ctx.insert("ewf_format", gs(cfg, "ewf_format"));
+    ctx.insert("segment_size", gs(cfg, "segment_size"));
+    ctx.insert("granularity_sectors", gs(cfg, "granularity_sectors"));
+    ctx.insert("swap_byte_pairs", &cfg["swap_byte_pairs"]);
+    ctx.insert("hash_enabled", &(!hash_types.trim().is_empty()));
+    ctx.insert("verify_hash", &false);
+    ctx.insert("unlock_hpa", &false);
+    ctx.insert("unlock_dco", &false);
 
-    let mut image_path = String::new();
-    if let Some(dest_disk) = report.get("dest_disk").and_then(|v| v.as_object()) {
-        if let Some(partitions) = dest_disk.get("partitions").and_then(|v| v.as_array()) {
-            if let Some(part) = partitions
-                .iter()
-                .find(|p| p.get("mountpoint").and_then(|m| m.as_str()).is_some())
+    // ---------- Segment #1 -------------------------------------------------
+    let mut seg_uid = String::new();
+    let mut seg_fs = String::new();
+    let mut seg_serial = String::new();
+    let mut seg_file = String::new();
+    let mut seg_path = String::new();
+
+    if let Some(dest) = report["dest_disk"].as_object() {
+        if let Some(part) = dest
+            .get("partitions")
+            .and_then(Value::as_array)
+            .and_then(|a| a.iter().find(|p| p.get("mountpoint").is_some()))
+        {
+            let po = part.as_object().unwrap();
+            seg_uid = gs(po, "uuid").into();
+            seg_fs = gs(po, "filesystem").into();
+            seg_serial = gs(dest, "serial").into();
+            seg_file = gs(&log_map, "evidence_number").into();
+            let mount = gs(po, "mountpoint");
+            seg_path = format!(
+                "{mount}/{}/{}/",
+                gs(&log_map, "case_number"),
+                gs(&log_map, "evidence_number")
+            );
+        }
+    }
+    ctx.insert("segment_uid", &seg_uid);
+    ctx.insert("segment_fs", &seg_fs);
+    ctx.insert("segment_serial", &seg_serial);
+    ctx.insert("segment_file", &seg_file);
+    ctx.insert("segment_path", &seg_path);
+    ctx.insert("image_path",   &seg_path); 
+
+    // ---------- Segment #2 (volitelný) -------------------------------------
+    let mut seg2_uid = String::new();
+    let mut seg2_fs = String::new();
+    let mut seg2_serial = String::new();
+    let mut seg2_file = String::new();
+    let mut seg2_path = String::new();
+
+    if let Some(dest2) = report["second_dest_disk"].as_object() {
+        if !dest2.is_empty() {
+            if let Some(part) = dest2
+                .get("partitions")
+                .and_then(Value::as_array)
+                .and_then(|a| a.iter().find(|p| p.get("mountpoint").is_some()))
             {
-                let mountpoint = part
-                    .get("mountpoint")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let case_number = report
-                    .get("log_record")
-                    .and_then(|lr| lr.get("case_number"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let evidence_number = report
-                    .get("log_record")
-                    .and_then(|lr| lr.get("evidence_number"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                image_path = format!("{}/{}/{}/", mountpoint, case_number, evidence_number);
+                let po = part.as_object().unwrap();
+                seg2_uid = gs(po, "uuid").into();
+                seg2_fs = gs(po, "filesystem").into();
+                seg2_serial = gs(dest2, "serial").into();
+                seg2_file = gs(&log_map, "evidence_number").into();
+                let mount = gs(po, "mountpoint");
+                seg2_path = format!(
+                    "{mount}/{}/{}/",
+                    gs(&log_map, "case_number"),
+                    gs(&log_map, "evidence_number")
+                );
             }
         }
     }
-    context.insert("image_path", &image_path);
+    ctx.insert("segment2_uid", &seg2_uid);
+    ctx.insert("segment2_fs", &seg2_fs);
+    ctx.insert("segment2_serial", &seg2_serial);
+    ctx.insert("segment2_file", &seg2_file);
+    ctx.insert("segment2_path", &seg2_path);
 
-    // Second image path (pokud existuje second_dest_disk)
-    let mut segment2_path = String::new();
-    if let Some(second_dest_disk) = report.get("second_dest_disk").and_then(|v| v.as_object()) {
-        if !second_dest_disk.is_empty() {
-            if let Some(partitions) = second_dest_disk.get("partitions").and_then(|v| v.as_array()) {
-                if let Some(part) = partitions
-                    .iter()
-                    .find(|p| p.get("mountpoint").and_then(|m| m.as_str()).is_some())
-                {
-                    let mountpoint = part
-                        .get("mountpoint")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let case_number = report
-                        .get("log_record")
-                        .and_then(|lr| lr.get("case_number"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let evidence_number = report
-                        .get("log_record")
-                        .and_then(|lr| lr.get("evidence_number"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    segment2_path = format!("{}/{}/{}/", mountpoint, case_number, evidence_number);
-                }
-            }
-        }
-    }
-    context.insert("segment2_path", &segment2_path);
-
-    // lba_count nastavíme na hodnotu capacity_bytes ze source_disk
-    let lba_count_val = report
-        .get("source_disk")
-        .and_then(|sd| sd.get("capacity_bytes"))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
-    context.insert("lba_count", &lba_count_val);
-
-    let sector_size_val = report
-        .get("source_disk")
-        .and_then(|sd| sd.get("logical_sector_size"))
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    context.insert("sector_size", &sector_size_val);
-
-    let segment_size = report
-        .get("config_record")
-        .and_then(|config| config.get("segment_size"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("N/A");
-    context.insert("segment_size", segment_size);
-
-    // místo pevného "compression"
-    let compression_method = report
-        .get("config_record")
-        .and_then(|cfg| cfg.get("compression_method"))
-        .and_then(Value::as_str)
-        .unwrap_or("None");
-    context.insert("compression_method", compression_method);
-
-    let compression_level = report
-        .get("config_record")
-        .and_then(|cfg| cfg.get("compression_level"))
-        .and_then(Value::as_str)
-        .unwrap_or("None");
-    context.insert("compression_level", compression_level);
-
-    let ewf_format = report
-        .get("config_record")
-        .and_then(|cfg| cfg.get("ewf_format"))
-        .and_then(Value::as_str)
-        .unwrap_or("N/A");
-    context.insert("ewf_format", ewf_format);
-
-    let hash_enabled = if hash_types != "N/A" && !hash_types.trim().is_empty() {
-        true
-    } else {
-        false
-    };
-    context.insert("hash_enabled", &hash_enabled);
-
-    context.insert("verify_hash", &false);
-    context.insert("unlock_hpa", &false);
-    context.insert("unlock_dco", &false);
-
-    let granularity_sectors = report
-        .get("config_record")
-        .and_then(|cfg| cfg.get("granularity_sectors"))
-        .and_then(Value::as_str)
-        .unwrap_or("N/A");
-    context.insert("granularity_sectors", granularity_sectors);
-
-    let swap_byte_pairs = match report
-        .get("config_record")
-        .and_then(|cfg| cfg.get("swap_byte_pairs"))
-        .and_then(Value::as_i64)
-    {
-        Some(0) => serde_json::Value::Bool(false),
-        Some(1) => serde_json::Value::Bool(true),
-        _ => serde_json::Value::String("N/A".to_string()),
-    };
-    context.insert("swap_byte_pairs", &swap_byte_pairs);
-
-    // místo pevného "result"
-    let result = match report
-        .get("copy_process")
-        .and_then(|cp| cp.get("status"))
-        .and_then(Value::as_str)
-    {
+    // ---------- další položky ----------------------------------------------
+    let result = match proc.get("status").and_then(Value::as_str) {
         Some("done") => "SUCCESS",
         Some("error") => "ERROR",
         _ => "N/A",
     };
-    context.insert("result", result);
+    ctx.insert("result", result);
+    ctx.insert("case_file", "CaseFile_001");
 
-    // Získání a formátování time_started z copy_process.start_datetime
-    let time_started_raw = report
-        .get("copy_process")
-        .and_then(|cp| cp.get("start_datetime"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let time_started = NaiveDateTime::parse_from_str(time_started_raw, "%Y-%m-%d %H:%M:%S")
-        .map(|dt| dt.format("%H:%M:%S %-d.%-m.%Y").to_string())
-        .unwrap_or_else(|_| "".to_string());
-    context.insert("time_started", &time_started);
+    // --- časy
+    let fmt = "%Y-%m-%d %H:%M:%S";
+    let t_start = NaiveDateTime::parse_from_str(gs(proc, "start_datetime"), fmt).ok();
+    let t_end = NaiveDateTime::parse_from_str(gs(proc, "end_datetime"), fmt).ok();
+    if let Some(s) = t_start {
+        ctx.insert("time_started", &s.format("%H:%M:%S %-d.%-m.%Y").to_string());
+    }
+    if let Some(c) = NaiveDateTime::parse_from_str(gs(&log_map, "end_datetime"), fmt).ok() {
+        ctx.insert(
+            "time_complete",
+            &c.format("%H:%M:%S %-d.%-m.%Y").to_string(),
+        );
+    }
+    let duration = t_start
+        .zip(t_end)
+        .map(|(s, e)| e - s)
+        .map(|d| {
+            format!(
+                "{:02}:{:02}:{:02}",
+                d.num_hours(),
+                d.num_minutes() % 60,
+                d.num_seconds() % 60
+            )
+        })
+        .unwrap_or_else(|| "N/A".into());
+    ctx.insert("duration", &duration);
 
-    // Výpočet duration jako rozdíl mezi copy_process.end_datetime a copy_process.start_datetime
-    let duration_str = {
-        let fmt = "%Y-%m-%d %H:%M:%S";
-        let start_opt = NaiveDateTime::parse_from_str(time_started_raw, fmt).ok();
-        let end_opt = report
-            .get("copy_process")
-            .and_then(|cp| cp.get("end_datetime"))
+    // LBA & sector
+    let sdisk = report["source_disk"].as_object().unwrap_or(&EMPTY_MAP);
+    ctx.insert("lba_count", &gu(sdisk, "capacity_bytes"));
+    ctx.insert("sector_size", &gu(sdisk, "logical_sector_size"));
+
+    // hashes
+    let mut hashes = Vec::<(String, String)>::new();
+    for (t, k) in [
+        ("MD5", "md5_hash"),
+        ("SHA1", "sha1_hash"),
+        ("SHA256", "sha256_hash"),
+    ] {
+        if let Some(h) = log_map
+            .get(k)
             .and_then(Value::as_str)
-            .and_then(|end_str| NaiveDateTime::parse_from_str(end_str, fmt).ok());
-        if let (Some(start_dt), Some(end_dt)) = (start_opt, end_opt) {
-            let diff = end_dt - start_dt;
-            let total_secs = diff.num_seconds();
-            let hours = total_secs / 3600;
-            let minutes = (total_secs % 3600) / 60;
-            let seconds = total_secs % 60;
-            format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
-        } else {
-            "N/A".to_string()
+            .filter(|s| !s.is_empty())
+        {
+            hashes.push((t.into(), h.into()));
+        }
+    }
+    ctx.insert("hashes", &hashes);
+
+    // case info
+    ctx.insert("case_number", gs(&log_map, "case_number"));
+    ctx.insert("evidence_number", gs(&log_map, "evidence_number"));
+    ctx.insert("examiner", gs(&log_map, "investigator_name"));
+    ctx.insert("notes", gs(&log_map, "notes"));
+
+    println!(
+        "✅  Context naplněn – {} klíčů",
+        ctx.clone().into_json().as_object().unwrap().len()
+    );
+
+    // ---------- tabulky drives / capacities / encryption -------------------
+    let mut drives = Vec::<Map<String, Value>>::new();
+    let mut caps = Vec::<Map<String, Value>>::new();
+    let mut encs = Vec::<Map<String, Value>>::new();
+
+    let push_disk = |vd: &mut Vec<Map<String, Value>>,
+                     vc: &mut Vec<Map<String, Value>>,
+                     ve: &mut Vec<Map<String, Value>>,
+                     disk: &Value,
+                     bay: &str,
+                     role: &str| {
+        let o = match disk.as_object() {
+            Some(m) if !m.is_empty() => m,
+            _ => return,
+        };
+        // drives
+        let mut d = Map::new();
+        d.insert("bay".into(), vstr(bay));
+        d.insert("role".into(), vstr(role));
+        d.insert("serial".into(), vstr(gs(o, "serial")));
+        d.insert("model".into(), vstr(gs(o, "model")));
+        let fs = o
+            .get("partitions")
+            .and_then(Value::as_array)
+            .and_then(|a| a.get(0))
+            .and_then(|p| p.get("filesystem").and_then(Value::as_str))
+            .unwrap_or("");
+        d.insert("fs".into(), vstr(fs));
+        d.insert(
+            "cipher".into(),
+            vstr(gs(o, "disk_encryption").if_empty_then("None")),
+        );
+        vd.push(d);
+
+        // caps
+        let mut c = Map::new();
+        let bytes = gu(o, "capacity_bytes");
+        c.insert("bay".into(), vstr(bay));
+        c.insert("serial".into(), vstr(gs(o, "serial")));
+        c.insert("model".into(), vstr(gs(o, "model")));
+        c.insert("capacity_bytes".into(), vu64(bytes));
+        c.insert(
+            "capacity_gb".into(),
+            vstr(format!("{:.1}", bytes as f64 / 1e9)),
+        );
+        vc.push(c);
+
+        // encryption
+        let mut e = Map::new();
+        let yes = |b| if b { "Yes" } else { "No" };
+        e.insert("bay".into(), vstr(bay));
+        e.insert("role".into(), vstr(role));
+        e.insert(
+            "ata_encryption".into(),
+            vstr(yes(o
+                .get("ata_encryption")
+                .and_then(Value::as_bool)
+                .unwrap_or(false))),
+        );
+        e.insert(
+            "sed_encryption".into(),
+            vstr(yes(o
+                .get("sed_encryption")
+                .and_then(Value::as_bool)
+                .unwrap_or(false))),
+        );
+        e.insert(
+            "locked".into(),
+            vstr(yes(!o
+                .get("readable")
+                .and_then(Value::as_bool)
+                .unwrap_or(true))),
+        );
+        ve.push(e);
+    };
+
+    push_disk(
+        &mut drives,
+        &mut caps,
+        &mut encs,
+        &report["source_disk"],
+        "1",
+        "Source",
+    );
+    push_disk(
+        &mut drives,
+        &mut caps,
+        &mut encs,
+        &report["dest_disk"],
+        "2",
+        "Destination",
+    );
+    push_disk(
+        &mut drives,
+        &mut caps,
+        &mut encs,
+        &report["second_dest_disk"],
+        "3",
+        "Secondary Destination",
+    );
+
+    ctx.insert("drives", &drives);
+    ctx.insert("capacities", &caps);
+    ctx.insert("encryption", &encs);
+    println!(
+        "✅  Tabulky vloženy – drives={}, caps={}, enc={}",
+        drives.len(),
+        caps.len(),
+        encs.len()
+    );
+
+    // ---------- partitions --------------------------------------------------
+    let mut parts = Vec::<Map<String, Value>>::new();
+    if let Some(arr) = sdisk.get("partitions").and_then(Value::as_array) {
+        for p in arr {
+            let o = p.as_object().unwrap();
+            let start = gu(o, "start_sector");
+            let end = gu(o, "end_sector");
+            let size_mb = ((end + 1).saturating_sub(start)) as f64 * 512.0 / 1_048_576.0;
+            let mut m = Map::new();
+            m.insert(
+                "index".into(),
+                vu64(o.get("index").and_then(Value::as_u64).unwrap_or(0)),
+            );
+            m.insert("fs".into(), vstr(gs(o, "filesystem")));
+            m.insert("start".into(), vu64(start));
+            m.insert("end".into(), vu64(end));
+            m.insert("size".into(), vstr(format!("{:.1} MB", size_mb)));
+            parts.push(m);
+        }
+    }
+    ctx.insert("source_partitions", &parts);
+    println!("✅  Source partitions – {}", parts.len());
+
+    // 3️⃣  Render
+    println!("🚧  Renderuji Tera …");
+
+    let latex = match Tera::one_off(TEMPLATE, &ctx, false) {
+        Ok(l) => l,
+        Err(err) => {
+            // ➜ 1) vytiskneme celou chybu jako Debug + Display
+            eprintln!("❌  Tera render error: {:#?}", err); // debug
+            eprintln!("└── {}", err); // display
+
+            // ➜ 2) dumpneme celý Context pro offline ladění
+            if let Ok(json) = serde_json::to_string_pretty(&ctx.clone().into_json()) {
+                let _ = fs::write("/home/master/Dokumenty/ctx_dump.json", json);
+                eprintln!("💾  uložen ctx_dump.json");
+            }
+
+            // ➜ 3) rovnou vrátíme String-chybovou hlášku
+            return Err(format!("Render selhal: {err}"));
         }
     };
-    context.insert("duration", &duration_str);
 
-    // Získání a formátování time_complete z log_record.end_datetime
-    let time_complete_raw = report
-        .get("log_record")
-        .and_then(|lr| lr.get("end_datetime"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let time_complete = NaiveDateTime::parse_from_str(time_complete_raw, "%Y-%m-%d %H:%M:%S")
-        .map(|dt| dt.format("%H:%M:%S %-d.%-m.%Y").to_string())
-        .unwrap_or_else(|_| "".to_string());
-    context.insert("time_complete", &time_complete);
+    fs::write("/home/master/Dokumenty/debug_output.tex", &latex).map_err(|e| e.to_string())?;
 
-    let log_record = report
-        .get("log_record")
-        .and_then(|v| v.as_object())
-        .unwrap();
+    println!("🚀  Tectonic → PDF …");
+    let pdf = tectonic::latex_to_pdf(&latex).map_err(|e| format!("{e:?}"))?;
+    fs::write("/home/master/Dokumenty/output.pdf", &pdf).map_err(|e| e.to_string())?;
 
-    let mut hashes = Vec::new();
-
-    if let Some(md5) = log_record.get("md5_hash").and_then(|v| v.as_str()) {
-        if !md5.is_empty() {
-            hashes.push(("MD5", md5));
+    // -------- uložení na disky ---------------------------------------------
+    let save_pdf = |key: &str, pdf: &[u8]| -> std::io::Result<()> {
+        let disk = report[key].as_object().unwrap_or(&EMPTY_MAP);
+        let base = disk
+            .get("partitions")
+            .and_then(Value::as_array)
+            .and_then(|a| a.iter().find(|p| p.get("mountpoint").is_some()))
+            .and_then(|p| p.get("mountpoint").and_then(Value::as_str))
+            .map(|mp| {
+                format!(
+                    "{mp}/{}/{}/",
+                    gs(&log_map, "case_number"),
+                    gs(&log_map, "evidence_number")
+                )
+            });
+        if let Some(mut dir) = base {
+            fs::create_dir_all(&dir)?;
+            dir.push_str("audit-report.pdf");
+            fs::write(dir, pdf)?;
         }
-    }
-    if let Some(sha1) = log_record.get("sha1_hash").and_then(|v| v.as_str()) {
-        if !sha1.is_empty() {
-            hashes.push(("SHA1", sha1));
-        }
-    }
-    if let Some(sha256) = log_record.get("sha256_hash").and_then(|v| v.as_str()) {
-        if !sha256.is_empty() {
-            hashes.push(("SHA256", sha256));
-        }
-    }
-    context.insert("hashes", &hashes);
-    context.insert("case_file", "CaseFile\\_001");
+        Ok(())
+    };
+    save_pdf("dest_disk", &pdf)
+        .and(save_pdf("second_dest_disk", &pdf))
+        .map_err(|e| e.to_string())?;
 
-    // místo pevného "case_id"
-    let case_number = report
-        .get("log_record")
-        .and_then(|lr| lr.get("case_number"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    context.insert("case_number", case_number);
-
-    let evidence_number = report
-        .get("log_record")
-        .and_then(|lr| lr.get("evidence_number"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    context.insert("evidence_number", evidence_number);
-
-    // místo pevného "examiner"
-    let examiner = report
-        .get("log_record")
-        .and_then(|lr| lr.get("investigator_name"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    context.insert("examiner", examiner);
-
-    // místo pevného "notes"
-    let notes = report
-        .get("log_record")
-        .and_then(|lr| lr.get("notes"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    context.insert("notes", notes);
-
-    let mut segment_uid = String::new();
-    let mut segment_path = String::new();
-    let mut segment_fs = String::new();
-    let mut segment_serial = String::new();
-    let mut segment_file = String::new();
-
-    if let Some(dest_disk) = report.get("dest_disk").and_then(|v| v.as_object()) {
-        // Najdi partition s mountpointem
-        if let Some(partitions) = dest_disk.get("partitions").and_then(|v| v.as_array()) {
-            if let Some(part) = partitions
-                .iter()
-                .find(|p| p.get("mountpoint").and_then(|m| m.as_str()).is_some())
-            {
-                segment_uid = part.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let mountpoint = part
-                    .get("mountpoint")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let case_number = report
-                    .get("log_record")
-                    .and_then(|lr| lr.get("case_number"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let evidence_number = report
-                    .get("log_record")
-                    .and_then(|lr| lr.get("evidence_number"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                segment_path = format!("{}/{}/{}/", mountpoint, case_number, evidence_number);
-                segment_fs = part
-                    .get("filesystem")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                segment_serial = dest_disk
-                    .get("serial")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                segment_file = evidence_number.to_string();
-            }
-        }
-    }
-    context.insert("segment_uid", &segment_uid);
-    context.insert("segment_path", &segment_path);
-    context.insert("segment_fs", &segment_fs);
-    context.insert("segment_serial", &segment_serial);
-    context.insert("segment_file", &segment_file);
-
-    // --- Segment Information (Second Destination) ---
-    let mut segment2_uid = String::new();
-    let mut segment2_fs = String::new();
-    let mut segment2_serial = String::new();
-    let mut segment2_file = String::new();
-
-    if let Some(second_dest_disk) = report.get("second_dest_disk").and_then(|v| v.as_object()) {
-        if !second_dest_disk.is_empty() {
-            if let Some(partitions) = second_dest_disk
-                .get("partitions")
-                .and_then(|v| v.as_array())
-            {
-                if let Some(part) = partitions
-                    .iter()
-                    .find(|p| p.get("mountpoint").and_then(|m| m.as_str()).is_some())
-                {
-                    segment2_uid = part.get("uuid").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let mountpoint = part
-                        .get("mountpoint")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let case_number = report
-                        .get("log_record")
-                        .and_then(|lr| lr.get("case_number"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let evidence_number = report
-                        .get("log_record")
-                        .and_then(|lr| lr.get("evidence_number"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    segment2_fs = part
-                        .get("filesystem")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    segment2_serial = second_dest_disk
-                        .get("serial")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    segment2_file = evidence_number.to_string();
-                }
-            }
-        }
-    }
-    context.insert("segment2_uid", &segment2_uid);
-    context.insert("segment2_fs", &segment2_fs);
-    context.insert("segment2_serial", &segment2_serial);
-    context.insert("segment2_file", &segment2_file);
-
-    let mut drives = Vec::new();
-
-    if let Some(source_disk) = report.get("source_disk").and_then(|v| v.as_object()) {
-        let mut map = std::collections::HashMap::new();
-        map.insert("bay", "1");
-        map.insert("role", "Source");
-        map.insert(
-            "serial",
-            source_disk
-                .get("serial")
-                .and_then(|v| v.as_str())
-                .unwrap_or(""),
-        );
-        map.insert(
-            "model",
-            source_disk
-                .get("model")
-                .and_then(|v| v.as_str())
-                .unwrap_or(""),
-        );
-        map.insert(
-            "fs",
-            source_disk
-                .get("partitions")
-                .and_then(|v| v.as_array())
-                .and_then(|arr| arr.get(0))
-                .and_then(|p| p.get("filesystem"))
-                .and_then(|v| v.as_str())
-                .unwrap_or(""),
-        );
-        map.insert(
-            "cipher",
-            source_disk
-                .get("disk_encryption")
-                .and_then(|v| v.as_str())
-                .unwrap_or("None"),
-        );
-        drives.push(map);
-    }
-
-    if let Some(dest_disk) = report.get("dest_disk").and_then(|v| v.as_object()) {
-        let mut map = std::collections::HashMap::new();
-        map.insert("bay", "2");
-        map.insert("role", "Destination");
-        map.insert(
-            "serial",
-            dest_disk
-                .get("serial")
-                .and_then(|v| v.as_str())
-                .unwrap_or(""),
-        );
-        map.insert(
-            "model",
-            dest_disk
-                .get("model")
-                .and_then(|v| v.as_str())
-                .unwrap_or(""),
-        );
-        map.insert(
-            "fs",
-            dest_disk
-                .get("partitions")
-                .and_then(|v| v.as_array())
-                .and_then(|arr| arr.get(0))
-                .and_then(|p| p.get("filesystem"))
-                .and_then(|v| v.as_str())
-                .unwrap_or(""),
-        );
-        map.insert(
-            "cipher",
-            dest_disk
-                .get("disk_encryption")
-                .and_then(|v| v.as_str())
-                .unwrap_or("None"),
-        );
-        drives.push(map);
-    }
-
-    if let Some(second_dest_disk) = report.get("second_dest_disk").and_then(|v| v.as_object()) {
-        // Pokud není prázdný objekt
-        if !second_dest_disk.is_empty() {
-            let mut map = std::collections::HashMap::new();
-            map.insert("bay", "3");
-            map.insert("role", "Secondary Destination");
-            map.insert(
-                "serial",
-                second_dest_disk
-                    .get("serial")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(""),
-            );
-            map.insert(
-                "model",
-                second_dest_disk
-                    .get("model")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(""),
-            );
-            map.insert(
-                "fs",
-                second_dest_disk
-                    .get("partitions")
-                    .and_then(|v| v.as_array())
-                    .and_then(|arr| arr.get(0))
-                    .and_then(|p| p.get("filesystem"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(""),
-            );
-            map.insert(
-                "cipher",
-                second_dest_disk
-                    .get("disk_encryption")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("None"),
-            );
-            drives.push(map);
-        }
-    }
-
-    context.insert("drives", &drives);
-
-    let mut capacities = Vec::new();
-
-    if let Some(source_disk) = report.get("source_disk").and_then(|v| v.as_object()) {
-        let mut map = std::collections::HashMap::new();
-        map.insert("bay".to_string(), "1".to_string());
-        map.insert(
-            "serial".to_string(),
-            source_disk
-                .get("serial")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-        );
-        map.insert(
-            "model".to_string(),
-            source_disk
-                .get("model")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-        );
-        let cap_bytes = source_disk
-            .get("capacity_bytes")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let cap_gb = (cap_bytes as f64) / 1_000_000_000.0;
-        map.insert("capacity_bytes".to_string(), cap_bytes.to_string());
-        map.insert("capacity_gb".to_string(), format!("{:.1}", cap_gb));
-        capacities.push(map);
-    }
-
-    if let Some(dest_disk) = report.get("dest_disk").and_then(|v| v.as_object()) {
-        let mut map = std::collections::HashMap::new();
-        map.insert("bay".to_string(), "2".to_string());
-        map.insert(
-            "serial".to_string(),
-            dest_disk
-                .get("serial")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-        );
-        map.insert(
-            "model".to_string(),
-            dest_disk
-                .get("model")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-        );
-        let cap_bytes = dest_disk
-            .get("capacity_bytes")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let cap_gb = (cap_bytes as f64) / 1_000_000_000.0;
-        map.insert("capacity_bytes".to_string(), cap_bytes.to_string());
-        map.insert("capacity_gb".to_string(), format!("{:.1}", cap_gb));
-        capacities.push(map);
-    }
-
-    if let Some(second_dest_disk) = report.get("second_dest_disk").and_then(|v| v.as_object()) {
-        if !second_dest_disk.is_empty() {
-            let mut map = std::collections::HashMap::new();
-            map.insert("bay".to_string(), "3".to_string());
-            map.insert(
-                "serial".to_string(),
-                second_dest_disk
-                    .get("serial")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            );
-            map.insert(
-                "model".to_string(),
-                second_dest_disk
-                    .get("model")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            );
-            let cap_bytes = second_dest_disk
-                .get("capacity_bytes")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            let cap_gb = (cap_bytes as f64) / 1_000_000_000.0;
-            map.insert("capacity_bytes".to_string(), cap_bytes.to_string());
-            map.insert("capacity_gb".to_string(), format!("{:.1}", cap_gb));
-            capacities.push(map);
-        }
-    }
-    context.insert("capacities", &capacities);
-
-    let mut encryption = Vec::new();
-
-    if let Some(source_disk) = report.get("source_disk").and_then(|v| v.as_object()) {
-        let mut map = std::collections::HashMap::new();
-        map.insert("bay", "1");
-        map.insert("role", "Source");
-        let ata = source_disk
-            .get("ata_encryption")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let sed = source_disk
-            .get("sed_encryption")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let readable = source_disk
-            .get("readable")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        map.insert("ata_encryption", if ata { "Yes" } else { "No" });
-        map.insert("sed_encryption", if sed { "Yes" } else { "No" });
-        map.insert("locked", if readable { "No" } else { "Yes" });
-        encryption.push(map);
-    }
-
-    if let Some(dest_disk) = report.get("dest_disk").and_then(|v| v.as_object()) {
-        let mut map = std::collections::HashMap::new();
-        map.insert("bay", "2");
-        map.insert("role", "Destination");
-        let ata = dest_disk
-            .get("ata_encryption")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let sed = dest_disk
-            .get("sed_encryption")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let readable = dest_disk
-            .get("readable")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        map.insert("ata_encryption", if ata { "Yes" } else { "No" });
-        map.insert("sed_encryption", if sed { "Yes" } else { "No" });
-        map.insert("locked", if readable { "No" } else { "Yes" });
-        encryption.push(map);
-    }
-
-    if let Some(second_dest_disk) = report.get("second_dest_disk").and_then(|v| v.as_object()) {
-        if !second_dest_disk.is_empty() {
-            let mut map = std::collections::HashMap::new();
-            map.insert("bay", "3");
-            map.insert("role", "Secondary Destination");
-            let ata = second_dest_disk
-                .get("ata_encryption")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let sed = second_dest_disk
-                .get("sed_encryption")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let readable = second_dest_disk
-                .get("readable")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            map.insert("ata_encryption", if ata { "Yes" } else { "No" });
-            map.insert("sed_encryption", if sed { "Yes" } else { "No" });
-            map.insert("locked", if readable { "No" } else { "Yes" });
-            encryption.push(map);
-        }
-    }
-
-    context.insert("encryption", &encryption);
-
-    let mut source_partitions = Vec::new();
-    if let Some(source_disk) = report.get("source_disk").and_then(|v| v.as_object()) {
-        if let Some(parts) = source_disk.get("partitions").and_then(|v| v.as_array()) {
-            for part in parts {
-                let mut map = std::collections::HashMap::new();
-                map.insert(
-                    "index".to_string(),
-                    part.get("index")
-                        .and_then(|v| v.as_u64())
-                        .map(|v| v.to_string())
-                        .unwrap_or_default(),
-                );
-                map.insert(
-                    "fs".to_string(),
-                    part.get("filesystem")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                );
-                map.insert(
-                    "start".to_string(),
-                    part.get("start_sector")
-                        .and_then(|v| v.as_u64())
-                        .map(|v| v.to_string())
-                        .unwrap_or_default(),
-                );
-                map.insert(
-                    "end".to_string(),
-                    part.get("end_sector")
-                        .and_then(|v| v.as_u64())
-                        .map(|v| v.to_string())
-                        .unwrap_or_default(),
-                );
-                // Výpočet velikosti v sektorech a v MB
-                let start = part
-                    .get("start_sector")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                let end = part.get("end_sector").and_then(|v| v.as_u64()).unwrap_or(0);
-                let size_mb = ((end + 1).saturating_sub(start)) as f64 * 512.0 / 1024.0 / 1024.0;
-                map.insert("size".to_string(), format!("{:.1} MB", size_mb));
-                let is_encrypted = part
-                    .get("is_encrypted")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                source_partitions.push(map);
-            }
-        }
-    }
-    context.insert("source_partitions", &source_partitions);
-
-    println!("🧾 Vyrenderuji šablonu z paměti...");
-    let latex_code = Tera::one_off(TEMPLATE, &context, false)
-        .map_err(|e| format!("Chyba při renderování šablony: {}", e))?;
-
-    fs::write("/home/master/Dokumenty/debug_output.tex", &latex_code)
-        .map_err(|e| format!("Nelze uložit debug_output.tex: {}", e))?;
-
-    // Najdi cestu pro uložení PDF na dest_disk
-    let mut dest_pdf_path = None;
-    if let Some(dest_disk) = report.get("dest_disk").and_then(|v| v.as_object()) {
-        if let Some(partitions) = dest_disk.get("partitions").and_then(|v| v.as_array()) {
-            if let Some(part) = partitions
-                .iter()
-                .find(|p| p.get("mountpoint").and_then(|m| m.as_str()).is_some())
-            {
-                let mountpoint = part.get("mountpoint").and_then(|v| v.as_str()).unwrap_or("");
-                let case_number = report
-                    .get("log_record")
-                    .and_then(|lr| lr.get("case_number"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let evidence_number = report
-                    .get("log_record")
-                    .and_then(|lr| lr.get("evidence_number"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                dest_pdf_path = Some(format!("{}/{}/{}/output.pdf", mountpoint, case_number, evidence_number));
-                // Vytvoř složku pokud neexistuje
-                let dir_path = format!("{}/{}/{}", mountpoint, case_number, evidence_number);
-                std::fs::create_dir_all(&dir_path).ok();
-            }
-        }
-    }
-
-    // Najdi cestu pro uložení PDF na second_dest_disk (pokud existuje)
-    let mut second_dest_pdf_path = None;
-    if let Some(second_dest_disk) = report.get("second_dest_disk").and_then(|v| v.as_object()) {
-        if !second_dest_disk.is_empty() {
-            if let Some(partitions) = second_dest_disk.get("partitions").and_then(|v| v.as_array()) {
-                if let Some(part) = partitions
-                    .iter()
-                    .find(|p| p.get("mountpoint").and_then(|m| m.as_str()).is_some())
-                {
-                    let mountpoint = part.get("mountpoint").and_then(|v| v.as_str()).unwrap_or("");
-                    let case_number = report
-                        .get("log_record")
-                        .and_then(|lr| lr.get("case_number"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let evidence_number = report
-                        .get("log_record")
-                        .and_then(|lr| lr.get("evidence_number"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    second_dest_pdf_path = Some(format!("{}/{}/{}/output.pdf", mountpoint, case_number, evidence_number));
-                    // Vytvoř složku pokud neexistuje
-                    let dir_path = format!("{}/{}/{}", mountpoint, case_number, evidence_number);
-                    std::fs::create_dir_all(&dir_path).ok();
-                }
-            }
-        }
-    }
-
-    // Uložení PDF do správných složek
-    println!("🧾 Kompiluji PDF pomocí Tectonic...");
-    match tectonic::latex_to_pdf(&latex_code) {
-        Ok(pdf_data) => {
-            // Ulož na dest_disk
-            if let Some(ref path) = dest_pdf_path {
-                fs::write(path, &pdf_data)
-                    .map_err(|e| format!("Nelze uložit report na dest_disk: {}", e))?;
-                println!("✅ PDF uloženo na dest_disk: {}", path);
-            }
-            // Ulož na second_dest_disk pokud existuje
-            if let Some(ref path) = second_dest_pdf_path {
-                fs::write(path, &pdf_data)
-                    .map_err(|e| format!("Nelze uložit report na second_dest_disk: {}", e))?;
-                println!("✅ PDF uloženo na second_dest_disk: {}", path);
-            }
-            // Pro debug účely stále ukládej i do domovské složky
-            fs::write("/home/master/Dokumenty/output.pdf", &pdf_data)
-                .map_err(|e| format!("Nelze uložit output.pdf: {}", e))?;
-            println!("✅ PDF úspěšně vytvořeno: output.pdf");
-        }
-        Err(e) => {
-            eprintln!("❌ Chyba při kompilaci: {:#?}", e);
-            println!("🧪 LaTeX byl uložen do debug_output.tex.");
-            return Err(format!("Chyba při kompilaci: {:?}", e));
-        }
-    }
-
+    println!("🏁  generate_report({id}) – DONE");
     Ok(())
 }
 
-pub fn get_report_json_data(copy_process_id: i64) -> Result<serde_json::Value, String> {
-    println!("Načítám data pro copy_process id: {}", copy_process_id);
+/// ------------ Načtení všech potřebných dat z DB --------------------------
+pub fn get_report_json_data(copy_id: i64) -> Result<Value, String> {
+    let mut pool = DB_POOL.get_connection().map_err(|e| e.to_string())?;
+    let conn = pool.connection();
 
-    // Získání sdíleného připojení z DB_POOL
-    let mut pooled_conn = DB_POOL
-        .get_connection()
-        .map_err(|e| format!("Chyba při získání připojení: {}", e))?;
-    let conn = pooled_conn.connection();
+    // copy_process
+    let cp_cols: Vec<String> = conn
+        .prepare("SELECT * FROM copy_process LIMIT 1")
+        .map_err(|e| e.to_string())?
+        .column_names()
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let copy_process = conn
+        .query_row("SELECT * FROM copy_process WHERE id=?", [copy_id], |r| {
+            Ok(row_to_json_with_cols(r, &cp_cols))
+        })
+        .map_err(|e| e.to_string())?;
 
-    // 1) Načíst záznam z tabulky copy_process jako serde_json::Value
-    let copy_process: serde_json::Value = conn
+    // trig id
+    let (tr_ewf, tr_dd): (Option<i64>, Option<i64>) = conn
         .query_row(
-            "SELECT * FROM copy_process WHERE id = ?1",
-            rusqlite::params![copy_process_id],
-            |row| {
-                let column_names: Vec<String> = row
-                    .as_ref()
-                    .column_names()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect();
-                Ok(row_to_json_with_columns(row, &column_names))
-            },
+            "SELECT triggered_by_ewf,triggered_by_dd FROM copy_process WHERE id=?",
+            [copy_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
-        .map_err(|e| format!("Chyba načítání copy_process: {}", e))?;
+        .map_err(|e| e.to_string())?;
 
-    // 2) Získat hodnoty triggered_by_ewf a triggered_by_dd z copy_process
-    let (triggered_by_ewf, triggered_by_dd): (Option<i64>, Option<i64>) = conn
-        .query_row(
-            "SELECT triggered_by_ewf, triggered_by_dd FROM copy_process WHERE id = ?1",
-            rusqlite::params![copy_process_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(|e| format!("Chyba při načítání triggerů z copy_process: {}", e))?;
-    println!(
-        "triggered_by_ewf={:?}, triggered_by_dd={:?}",
-        triggered_by_ewf, triggered_by_dd
-    );
-
-    // 3) Podle triggerů určit logovací a konfigurační tabulku
-    let (log_table, log_id, config_table) = if let Some(ewf_log_id) = triggered_by_ewf {
-        println!("Proces spuštěn přes EWF, log id: {}", ewf_log_id);
-        ("copy_log_ewf", ewf_log_id, "ewf_config")
-    } else if let Some(dd_log_id) = triggered_by_dd {
-        println!("Proces spuštěn přes DD, log id: {}", dd_log_id);
-        ("copy_log_dd", dd_log_id, "dd_config")
+    let (log_table, log_id, cfg_table) = if let Some(l) = tr_ewf {
+        ("copy_log_ewf", l, "ewf_config")
+    } else if let Some(l) = tr_dd {
+        ("copy_log_dd", l, "dd_config")
     } else {
-        return Err("copy_process neobsahuje ani triggered_by_ewf ani triggered_by_dd".into());
+        return Err("copy_process nemá trigger".into());
     };
 
-    // 4) Načíst záznam z logovací tabulky
-    let log_query = format!("SELECT * FROM {} WHERE id = ?1", log_table);
-    let mut stmt_log = conn
-        .prepare(&log_query)
-        .map_err(|e| format!("Chyba přípravy dotazu na {}: {}", log_table, e))?;
-    let log_columns: Vec<String> = stmt_log
+    // log_record
+    let log_cols: Vec<String> = conn
+        .prepare(&format!("SELECT * FROM {log_table} LIMIT 1"))
+        .map_err(|e| e.to_string())?
         .column_names()
         .iter()
         .map(|s| s.to_string())
         .collect();
-    let log_record: serde_json::Value = stmt_log
-        .query_row(rusqlite::params![log_id], |row| {
-            Ok(row_to_json_with_columns(row, &log_columns))
-        })
-        .map_err(|e| format!("Chyba načítání z tabulky {}: {}", log_table, e))?;
+    let log_record = conn
+        .query_row(
+            &format!("SELECT * FROM {log_table} WHERE id=?"),
+            [log_id],
+            |r| Ok(row_to_json_with_cols(r, &log_cols)),
+        )
+        .map_err(|e| e.to_string())?;
 
-    // 5) Z logovacího záznamu získat config_id (předpokládáme sloupec "config_id")
-    let config_id: i64 = {
-        let mut stmt = conn
-            .prepare(&format!(
-                "SELECT config_id FROM {} WHERE id = ?1",
-                log_table
-            ))
-            .map_err(|e| format!("Chyba přípravy dotazu pro config_id: {}", e))?;
-        stmt.query_row(rusqlite::params![log_id], |row| row.get(0))
-            .map_err(|e| format!("Chyba načítání config_id z tabulky {}: {}", log_table, e))?
-    };
-    println!("Z logu získaný config_id: {}", config_id);
-
-    // 6) Načíst celý konfigurační záznam
-    let config_query = format!("SELECT * FROM {} WHERE id = ?1", config_table);
-    let mut stmt_config = conn
-        .prepare(&config_query)
-        .map_err(|e| format!("Chyba přípravy dotazu na {}: {}", config_table, e))?;
-    let config_columns: Vec<String> = stmt_config
+    // config_record
+    let cfg_cols: Vec<String> = conn
+        .prepare(&format!("SELECT * FROM {cfg_table} LIMIT 1"))
+        .map_err(|e| e.to_string())?
         .column_names()
         .iter()
         .map(|s| s.to_string())
         .collect();
-    let config: serde_json::Value = stmt_config
-        .query_row(rusqlite::params![config_id], |row| {
-            Ok(row_to_json_with_columns(row, &config_columns))
-        })
-        .map_err(|e| format!("Chyba načítání z tabulky {}: {}", config_table, e))?;
+    let cfg_id: i64 = conn
+        .query_row(
+            &format!("SELECT config_id FROM {log_table} WHERE id=?"),
+            [log_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let cfg_record = conn
+        .query_row(
+            &format!("SELECT * FROM {cfg_table} WHERE id=?"),
+            [cfg_id],
+            |r| Ok(row_to_json_with_cols(r, &cfg_cols)),
+        )
+        .map_err(|e| e.to_string())?;
 
-    // Sestavit výsledný JSON objekt se všemi získanými daty.
-    let mut result = serde_json::Map::new();
-    result.insert("copy_process".into(), copy_process);
-    result.insert("log_record".into(), log_record);
-    result.insert("config_record".into(), config);
-
-    Ok(serde_json::Value::Object(result))
+    let mut root = Map::new();
+    root.insert("copy_process".into(), copy_process);
+    root.insert("log_record".into(), log_record);
+    root.insert("config_record".into(), cfg_record);
+    Ok(Value::Object(root))
 }
