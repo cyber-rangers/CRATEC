@@ -9,7 +9,9 @@ use serde_json::{Map, Value};
 use std::fs;
 use tera::{Context, Tera};
 
-static TEMPLATE: &str = include_str!("./templates/en.tex");
+static TEMPLATE_EN_EWF: &str = include_str!("./templates/en_ewf.tex");
+static TEMPLATE_EN_DD: &str = include_str!("./templates/en_dd.tex");
+
 
 /// ----------------- malé pomůcky ------------------------------------------
 fn vstr<S: Into<String>>(s: S) -> Value {
@@ -66,7 +68,7 @@ fn get_interface_path(conn: &rusqlite::Connection, id: i64) -> Option<String> {
 }
 
 /// --------------------------------------------------------------------------
-pub fn generate_report(id: i64) -> Result<(), String> {
+pub fn generate_report_ewfacquire(id: i64) -> Result<(), String> {
     println!("▶️  generate_report({id}) – START");
 
     // 1️⃣  Načti agregovaný JSON z DB
@@ -102,6 +104,13 @@ pub fn generate_report(id: i64) -> Result<(), String> {
     report.insert("dest_disk".into(), load_disk("dest_disk_id")?);
     report.insert("second_dest_disk".into(), load_disk("second_dest_disk_id")?);
     println!("✅  disky načteny");
+
+    let root_value = Value::Object(report.clone());
+    // debug‐print celého JSON
+    println!(
+        "DEBUG root JSON:\n{}",
+        serde_json::to_string_pretty(&root_value).unwrap()
+    );
 
     // 2️⃣  Sestavení Tera Contextu
     let mut ctx = Context::new();
@@ -410,7 +419,7 @@ pub fn generate_report(id: i64) -> Result<(), String> {
     // 3️⃣  Render
     println!("🚧  Renderuji Tera …");
 
-    let latex = match Tera::one_off(TEMPLATE, &ctx, false) {
+    let latex = match Tera::one_off(TEMPLATE_EN_EWF, &ctx, false) {
         Ok(l) => l,
         Err(err) => {
             // ➜ 1) vytiskneme celou chybu jako Debug + Display
@@ -464,6 +473,57 @@ pub fn generate_report(id: i64) -> Result<(), String> {
     Ok(())
 }
 
+
+
+
+pub fn generate_report_dcfldd(id: i64) -> Result<(), String> {
+    println!("▶️  generate_report({id}) – START");
+
+    // 1️⃣  Načti agregovaný JSON z DB
+    let mut report = get_report_json_data(id)?
+        .as_object()
+        .cloned()
+        .ok_or("Report JSON není objekt")?;
+    let log_map = report["log_record"]
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
+    println!(
+        "✅  data z DB – klíče: {:?}",
+        report.keys().collect::<Vec<_>>()
+    );
+
+    // --- helper: načti disk podle ID v logu
+    let load_disk = |key: &str| -> Result<Value, String> {
+        let disk_id = log_map.get(key).and_then(Value::as_i64).unwrap_or(0);
+        if disk_id == 0 {
+            return Ok(Value::Null);
+        }
+        let mut pool = DB_POOL.get_connection().map_err(|e| e.to_string())?;
+        let path = get_interface_path(pool.connection(), disk_id)
+            .map(|p| format!("/dev/disk/by-path/{p}"))
+            .ok_or_else(|| format!("interface_path chybí pro disk {disk_id}"))?;
+        println!("🔍  {key}: disk_utils::get_disk_info({path})");
+        disk_utils::get_disk_info(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|d| serde_json::to_value(d).map_err(|e| e.to_string()))
+    };
+    report.insert("source_disk".into(), load_disk("source_disk_id")?);
+    report.insert("dest_disk".into(), load_disk("dest_disk_id")?);
+    report.insert("second_dest_disk".into(), load_disk("second_dest_disk_id")?);
+    println!("✅  disky načteny");
+
+    let root_value = Value::Object(report.clone());
+    // debug‐print celého JSON
+    println!(
+        "DEBUG root JSON:\n{}",
+        serde_json::to_string_pretty(&root_value).unwrap()
+    );
+
+    Ok(())
+}
+
+
 /// ------------ Načtení všech potřebných dat z DB --------------------------
 pub fn get_report_json_data(copy_id: i64) -> Result<Value, String> {
     let mut pool = DB_POOL.get_connection().map_err(|e| e.to_string())?;
@@ -493,8 +553,10 @@ pub fn get_report_json_data(copy_id: i64) -> Result<Value, String> {
         .map_err(|e| e.to_string())?;
 
     let (log_table, log_id, cfg_table) = if let Some(l) = tr_ewf {
+        print!("VYBÍRÁM EWF");
         ("copy_log_ewf", l, "ewf_config")
     } else if let Some(l) = tr_dd {
+        print!("VYBÍRÁM DCFldd");
         ("copy_log_dd", l, "dd_config")
     } else {
         return Err("copy_process nemá trigger".into());
@@ -543,5 +605,7 @@ pub fn get_report_json_data(copy_id: i64) -> Result<Value, String> {
     root.insert("copy_process".into(), copy_process);
     root.insert("log_record".into(), log_record);
     root.insert("config_record".into(), cfg_record);
+    
+
     Ok(Value::Object(root))
 }

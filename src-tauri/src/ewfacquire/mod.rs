@@ -735,7 +735,7 @@ pub async fn run_ewfacquire(
                 );
 
                 if final_status == "done" {
-                    if let Err(e) = crate::report::generate_report(process_id) {
+                    if let Err(e) = crate::report::generate_report_ewfacquire(process_id) {
                         eprintln!("Chyba při generování reportu: {}", e);
                     }
                 }

@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Konec TEST */
 
 
-   report::generate_report(4)?;
+   report::generate_report_dcfldd(1)?;
     
     
 
@@ -78,6 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             lockscreen::unlock_system,
             history::get_history,
             history::get_config_entry,
+            history::get_process_log_lines_texts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

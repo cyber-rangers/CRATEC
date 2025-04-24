@@ -1,17 +1,20 @@
 use tauri::command;
 use serde_json::{Value, Map, json};
 use rusqlite::{params, Row, OptionalExtension};
+use rusqlite::types::ValueRef;
 use crate::db::DB_POOL;
 
 /// Převod jednoho řádku na JSON objekt, používá předané názvy sloupců
 fn row_to_json(row: &Row, col_names: &[String]) -> Value {
     let mut obj = Map::new();
     for (i, name) in col_names.iter().enumerate() {
-        let v: Value = row.get::<_, Option<String>>(i)
-            .ok()
-            .flatten()
-            .map(Value::String)
-            .unwrap_or(Value::Null);
+        let v = match row.get_ref(i).unwrap() {
+            ValueRef::Null => Value::Null,
+            ValueRef::Integer(n) => Value::from(n),
+            ValueRef::Real(f) => Value::from(f),
+            ValueRef::Text(s) => Value::String(String::from_utf8_lossy(s).to_string()),
+            ValueRef::Blob(b) => Value::String(base64::encode(b)),
+        };
         obj.insert(name.clone(), v);
     }
     Value::Object(obj)
@@ -65,26 +68,46 @@ pub async fn get_history() -> Result<Value, String> {
             }));
         }
 
+        println!("get_history result: {}", serde_json::to_string_pretty(&items).unwrap());
+
         Ok(Value::Array(items))
     }).map_err(|e| e.to_string())
 }
 
-/// 2) Vrátí všechny řádky z `process_log_lines` pro dané `process_id`
+
+/// Vrátí pole textových řádků logu pro daný process_id
 #[command(rename_all = "snake_case")]
-pub async fn get_process_log_lines(process_id: i64) -> Result<Value, String> {
+pub async fn get_process_log_lines_texts(process_id: i64) -> Result<Value, String> {
+    println!("get_process_log_lines_texts called with process_id: {}", process_id);
     let mut pooled = DB_POOL.get_connection().map_err(|e| e.to_string())?;
     pooled.execute(|conn| {
         let mut st = conn.prepare(
-            "SELECT * FROM process_log_lines WHERE process_id = ?1 ORDER BY line_number ASC"
+            "SELECT line_content FROM process_log_lines WHERE process_id = ?1 ORDER BY line_number ASC"
         )?;
-        let cols = st.column_names().iter().map(|s| s.to_string()).collect::<Vec<_>>();
         let mut lines = Vec::new();
         let mut rows = st.query(params![process_id])?;
         while let Some(r) = rows.next()? {
-            lines.push(row_to_json(r, &cols));
+            match r.get_ref(0)? {
+                ValueRef::Text(s) => lines.push(Value::String(String::from_utf8_lossy(s).to_string())),
+                ValueRef::Blob(b) => {
+                    match std::str::from_utf8(b) {
+                        Ok(txt) => lines.push(Value::String(txt.to_string())),
+                        Err(_) => lines.push(Value::String(base64::encode(b))),
+                    }
+                },
+                ValueRef::Null => lines.push(Value::Null),
+                _ => lines.push(Value::String("<nepodporovaný typ>".to_string())),
+            }
         }
-        Ok(Value::Array(lines))
-    }).map_err(|e| e.to_string())
+        if lines.is_empty() {
+            Ok(Value::String("Není dostupný žádný výpis".to_string()))
+        } else {
+            Ok(Value::Array(lines))
+        }
+    }).map_err(|e| {
+        println!("get_process_log_lines_texts error: {}", e);
+        e.to_string()
+    })
 }
 
 /// 3) Vrátí konfiguraci z `ewf_config` nebo `dd_config` podle `config_type`

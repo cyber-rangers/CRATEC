@@ -170,30 +170,26 @@
                 formData.split_value = 'whole';
             }
 
-            const hashwindow = formData.hashwindow_value.toLowerCase() === 'whole'
-                ? 'whole'
-                : `${formData.hashwindow_value}${formData.hashwindow_unit}`;
+            // Převod jednotek pro ukládání do DB
+            const unitMap = { GB: 'G', MB: 'M' };
 
-            const split = formData.split_value.toLowerCase() === 'whole'
-                ? 'whole'
-                : `${formData.split_value}${formData.split_unit}`;
-
-            const vf_parsed = formData.vf === 'on' ? 1 : 0;
-            const diffwr_parsed = formData.diffwr === 'on' ? 1 : 0;
+            // Přepiš split_unit a hashwindow_unit na správný formát
+            const split_unit = unitMap[formData.split_unit as 'GB' | 'MB'];
+            const hashwindow_unit = unitMap[formData.hashwindow_unit as 'GB' | 'MB'];
 
             await invoke('save_new_dd_config', {
                 confname: formData.confname,
                 format: formData.format,
                 limit_mode: formData.limit_mode,
-                offset: formData.offset, // jediné pole nahrazující seek/skip
+                offset: formData.offset,
                 hash_types: formData.hash_types,
                 hashwindow_value: formData.hashwindow_value,
-                hashwindow_unit: formData.hashwindow_unit,
+                hashwindow_unit, // zde už bude 'G' nebo 'M'
                 split_value: formData.split_value,
-                split_unit: formData.split_unit,
+                split_unit,      // zde už bude 'G' nebo 'M'
                 vf: formData.vf,
                 diffwr: formData.diffwr,
-                notes: formData.notes
+                notes: formData.notes,
             });
 
             goto('/dashboard/pre_configs');

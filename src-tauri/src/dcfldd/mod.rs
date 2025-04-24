@@ -376,6 +376,11 @@ pub async fn run_dcfldd(
     // Input device
     push_key_val(&mut args_exec, &mut args_print, "if", &actual_input_device);
 
+    // Split file option if specified
+    if config.split != "whole" {
+        push_key_val(&mut args_exec, &mut args_print, "split", &config.split);
+    }
+
     let case_number = dd_params.case_number.trim();
     let evidence_number = dd_params.evidence_number.trim();
 
@@ -466,10 +471,7 @@ pub async fn run_dcfldd(
         }
     }
 
-    // Split file option if specified
-    if config.split != "whole" {
-        push_key_val(&mut args_exec, &mut args_print, "split", &config.split);
-    }
+    
 
     // Verify input option
     if config.vf {
@@ -639,7 +641,6 @@ pub async fn run_dcfldd(
                 }
             }
             CommandEvent::Terminated(exit_code) => {
-                // ... (nezměněný kód ukončení procesu)
                 LED_CONTROLLER.notify_process_end();
 
                 let final_status = if exit_code.code.unwrap_or(-1) == 0 {
@@ -651,23 +652,59 @@ pub async fn run_dcfldd(
                 let end_time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                 let end_time_for_db = end_time.clone();
 
+                // Cesta k hash.log
+                let hash_log_path = format!("{}/hash.log", evidence_dir_1);
+
+                // Načti hashe z hash.log
+                fn parse_hashes_from_log(path: &str) -> std::io::Result<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> {
+                    let content = std::fs::read_to_string(path)?;
+                    let mut md5 = None;
+                    let mut sha1 = None;
+                    let mut sha256 = None;
+                    let mut sha384 = None;
+                    let mut sha512 = None;
+                    for line in content.lines() {
+                        if let Some(rest) = line.strip_prefix("Total (md5): ") {
+                            md5 = Some(rest.trim().to_string());
+                        } else if let Some(rest) = line.strip_prefix("Total (sha1): ") {
+                            sha1 = Some(rest.trim().to_string());
+                        } else if let Some(rest) = line.strip_prefix("Total (sha256): ") {
+                            sha256 = Some(rest.trim().to_string());
+                        } else if let Some(rest) = line.strip_prefix("Total (sha384): ") {
+                            sha384 = Some(rest.trim().to_string());
+                        } else if let Some(rest) = line.strip_prefix("Total (sha512): ") {
+                            sha512 = Some(rest.trim().to_string());
+                        }
+                    }
+                    Ok((md5, sha1, sha256, sha384, sha512))
+                }
+
+                let (md5_hash, sha1_hash, sha256_hash, sha384_hash, sha512_hash) =
+                    parse_hashes_from_log(&hash_log_path).unwrap_or((None, None, None, None, None));
+
                 tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
                     let conn = crate::db::create_new_connection()
                         .map_err(|e| format!("(DB) Error creating final connection: {}", e))?;
                     let mut update_sql = format!(
-                        "UPDATE copy_log_dd SET status = '{}', end_datetime = '{}' ",
+                        "UPDATE copy_log_dd SET status = '{}', end_datetime = '{}'",
                         final_status, end_time_for_db
                     );
                     if let Some(hash) = &md5_hash {
-                        update_sql.push_str(&format!(", md5_hash = '{}' ", hash));
+                        update_sql.push_str(&format!(", md5_hash = '{}'", hash));
                     }
                     if let Some(hash) = &sha1_hash {
-                        update_sql.push_str(&format!(", sha1_hash = '{}' ", hash));
+                        update_sql.push_str(&format!(", sha1_hash = '{}'", hash));
                     }
                     if let Some(hash) = &sha256_hash {
-                        update_sql.push_str(&format!(", sha256_hash = '{}' ", hash));
+                        update_sql.push_str(&format!(", sha256_hash = '{}'", hash));
                     }
-                    update_sql.push_str(&format!("WHERE id = {}", copy_log_id));
+                    if let Some(hash) = &sha384_hash {
+                        update_sql.push_str(&format!(", sha384_hash = '{}'", hash));
+                    }
+                    if let Some(hash) = &sha512_hash {
+                        update_sql.push_str(&format!(", sha512_hash = '{}'", hash));
+                    }
+                    update_sql.push_str(&format!(" WHERE id = {}", copy_log_id));
 
                     conn.execute(&update_sql, [])
                         .map_err(|e| format!("Error updating copy_log_dd: {}", e))?;

@@ -267,7 +267,7 @@
 								<p class="name">{config.confname}</p>
 								<p class="text">ID: {config.id}</p>
 								<p class="title">Block size</p>
-								<p class="text">{config.bs} b</p>
+								<p class="text">{config.format}</p>
 							</div>
 						</div>
 					{/snippet}
