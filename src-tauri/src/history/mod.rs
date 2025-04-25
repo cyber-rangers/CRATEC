@@ -67,9 +67,7 @@ pub async fn get_history() -> Result<Value, String> {
                 "copy_log": copy_log
             }));
         }
-
-        println!("get_history result: {}", serde_json::to_string_pretty(&items).unwrap());
-
+        
         Ok(Value::Array(items))
     }).map_err(|e| e.to_string())
 }
@@ -78,7 +76,6 @@ pub async fn get_history() -> Result<Value, String> {
 /// Vrátí pole textových řádků logu pro daný process_id
 #[command(rename_all = "snake_case")]
 pub async fn get_process_log_lines_texts(process_id: i64) -> Result<Value, String> {
-    println!("get_process_log_lines_texts called with process_id: {}", process_id);
     let mut pooled = DB_POOL.get_connection().map_err(|e| e.to_string())?;
     pooled.execute(|conn| {
         let mut st = conn.prepare(

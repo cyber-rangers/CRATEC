@@ -85,10 +85,6 @@
                         </td>
                     </tr>
                     <tr>
-                        <td><strong>VF</strong></td>
-                        <td>{config?.vf ? 'Zapnuto' : 'Vypnuto'}</td>
-                    </tr>
-                    <tr>
                         <td><strong>Diffwr</strong></td>
                         <td>{config?.diffwr ? 'Zapnuto' : 'Vypnuto'}</td>
                     </tr>

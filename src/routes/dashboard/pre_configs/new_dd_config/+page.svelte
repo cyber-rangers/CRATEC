@@ -43,7 +43,6 @@
     let hashPopover = false;
     let hashWindowPopover = false;
     let splitPopover = false;
-    let vfPopover = false;
     let diffwrPopover = false;
     let notesPopover = false;
 
@@ -87,6 +86,7 @@
         { label: 'GB', value: 'GB' }
     ];
 
+
     const splitUnitOptions = [
         { label: 'MB', value: 'MB' },
         { label: 'GB', value: 'GB' }
@@ -108,8 +108,6 @@
                 return 'Velikost mezibloku pro průběžný hash.';
             case 'split':
                 return 'Rozdělení výstupního souboru na více částí. "whole" znamená nerozdělovat.';
-            case 'vf':
-                return 'Dodatečné ověření, které prodlouží proces a nelze jej použít, pokud je výstup rozdělen na více souborů.';
             case 'diffwr':
                 return 'Porovnání/změna bloků. off = vypnuto, on = zapnuto.';
             case 'notes':
@@ -140,7 +138,6 @@
         hashPopover = false;
         hashWindowPopover = false;
         splitPopover = false;
-        vfPopover = false;
         diffwrPopover = false;
         notesPopover = false;
     }
@@ -153,13 +150,6 @@
         }
     }
 
-    function toggleVF() {
-        formData.vf = formData.vf === 'on' ? 'off' : 'on';
-    }
-
-    function isWholeSplit() {
-        return !formData.split_value.trim();
-    }
 
     async function onFormSubmit(): Promise<void> {
         try {
@@ -187,7 +177,7 @@
                 hashwindow_unit, // zde už bude 'G' nebo 'M'
                 split_value: formData.split_value,
                 split_unit,      // zde už bude 'G' nebo 'M'
-                vf: formData.vf,
+                vf: 'off',       // vždy posílej 'off'
                 diffwr: formData.diffwr,
                 notes: formData.notes,
             });
@@ -484,48 +474,8 @@
                     value={[formData.split_unit]}
                     onValueChange={(e) => (formData.split_unit = e.value[0])}
                     placeholder="Vyberte..."
-                    disabled={isWholeSplit()}
                 />
             </div>
-        </label>
-
-        <!-- vf (checkbox, disabled pokud splitValue != '' ) -->
-        <label class="label">
-            <div class="flex items-center gap-2">
-                <span>Ověření souboru (vf)</span>
-                <Popover
-                    open={vfPopover}
-                    onOpenChange={(e) => (vfPopover = e.open)}
-                    triggerBase="btn-icon preset-tonal"
-                    contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
-                    arrow
-                    arrowBackground="!bg-surface-200 dark:!bg-surface-800"
-                    zIndex="999"
-                >
-                    {#snippet trigger()}
-                        <Info />
-                    {/snippet}
-                    {#snippet content()}
-                        <div class="flex justify-between items-center mb-2">
-                            <h2 class="text-lg font-bold">Info</h2>
-                            <button class="btn-icon" on:click={() => (vfPopover = false)}>
-                                <X />
-                            </button>
-                        </div>
-                        {getExplanation('vf')}
-                    {/snippet}
-                </Popover>
-            </div>
-            <label class="flex items-center">
-                <input
-                    type="checkbox"
-                    class="checkbox"
-                    on:change={toggleVF}
-                    checked={formData.vf === 'on'}
-                    disabled={!isWholeSplit()}
-                />
-                <span class="ml-2">Zapnout dodatečné ověření</span>
-            </label>
         </label>
 
         <!-- diffwr -->

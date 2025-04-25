@@ -31,7 +31,6 @@
         try {
             const data = await invoke<HistoryItem[]>('get_history');
             historyData = data;
-            console.log('History data loaded:', historyData);
         } catch (e) {
             console.error('Failed to load history:', e);
         }
@@ -48,7 +47,6 @@
         if (!selectedDetail) return;
         loadingLog = true;
         const processId = Number(selectedDetail.process.id ?? selectedDetail.process.process_id);
-        console.log('fetchProcessLog called, processId:', processId, selectedDetail);
         try {
             if (!processId) {
                 processLog = ['ID procesu nenalezeno.'];

@@ -17,6 +17,7 @@ mod disk_utils;
 mod config;
 mod lockscreen;
 mod history;
+mod app_info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
