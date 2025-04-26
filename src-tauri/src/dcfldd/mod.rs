@@ -2,6 +2,7 @@ use crate::db::DB_CONN;
 use crate::disk_utils::{get_mountpoint_for_interface, get_total_blocks, get_block_size};  // Přidáno
 use crate::led::LED_CONTROLLER;
 use crate::logger::{log_debug, log_error, log_warn};
+use crate::report::generate_report_dcfldd;
 use crate::websocket;
 use chrono::{Local, Utc};
 use lazy_static::lazy_static;
@@ -551,9 +552,6 @@ pub async fn run_dcfldd(
                 // Použijeme trimovanou verzi výsledku pro regulární výrazy
                 lazy_static! {
                     static ref PROGRESS_REGEX: Regex = Regex::new(r"(\d+)% done, .*").unwrap();
-                    static ref MD5_REGEX: Regex = Regex::new(r"MD5: ([a-fA-F0-9]{32})").unwrap();
-                    static ref SHA1_REGEX: Regex = Regex::new(r"SHA1: ([a-fA-F0-9]{40})").unwrap();
-                    static ref SHA256_REGEX: Regex = Regex::new(r"SHA256: ([a-fA-F0-9]{64})").unwrap();
                     static ref BLOCKS_REGEX: Regex = Regex::new(r"^(\d+)\ blocks\s+\((\d+)Mb\)\ written\.?$").unwrap();
                 }
 
@@ -570,20 +568,6 @@ pub async fn run_dcfldd(
                         let json = serde_json::to_string(&update).unwrap();
                         websocket::broadcast_message(&json).await;
                     }
-                }
-
-                // Extrakce hash hodnot
-                if let Some(caps) = MD5_REGEX.captures(trimmed) {
-                    md5_hash = Some(caps[1].to_string());
-                    println!("Found MD5 hash: {}", caps[1].to_string());
-                }
-                if let Some(caps) = SHA1_REGEX.captures(trimmed) {
-                    sha1_hash = Some(caps[1].to_string());
-                    println!("Found SHA1 hash: {}", caps[1].to_string());
-                }
-                if let Some(caps) = SHA256_REGEX.captures(trimmed) {
-                    sha256_hash = Some(caps[1].to_string());
-                    println!("Found SHA256 hash: {}", caps[1].to_string());
                 }
 
                 // Zpracování progresního výstupu pomocí trimované verze
@@ -649,7 +633,7 @@ pub async fn run_dcfldd(
                     "error"
                 };
 
-                let end_time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                let end_time = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
                 let end_time_for_db = end_time.clone();
 
                 // Cesta k hash.log
@@ -719,6 +703,13 @@ pub async fn run_dcfldd(
                 })
                 .await
                 .map_err(|e| e.to_string())??;
+
+                if final_status == "done" {
+                    let report_result = generate_report_dcfldd(process_id);
+                    if let Err(e) = report_result {
+                        eprintln!("Chyba při generování reportu: {}", e);
+                    }
+                }
 
                 let ws_done = WsProcessDone {
                     msg_type: "ProcessDone".to_string(),

@@ -2,7 +2,7 @@
 
 use crate::{db::DB_POOL, disk_utils};
 
-use chrono::{Local, NaiveDateTime};
+use chrono::{Local, NaiveDateTime, TimeZone, Utc}; // přidej Utc
 use once_cell::sync::Lazy;
 use rusqlite::{Row, Statement};
 use serde_json::{Map, Value};
@@ -11,7 +11,6 @@ use tera::{Context, Tera};
 
 static TEMPLATE_EN_EWF: &str = include_str!("./templates/en_ewf.tex");
 static TEMPLATE_EN_DD: &str = include_str!("./templates/en_dd.tex");
-
 
 /// ----------------- malé pomůcky ------------------------------------------
 fn vstr<S: Into<String>>(s: S) -> Value {
@@ -40,7 +39,13 @@ fn gs<'a>(o: &'a Map<String, Value>, k: &str) -> &'a str {
     o.get(k).and_then(Value::as_str).unwrap_or("")
 }
 fn gu(o: &Map<String, Value>, k: &str) -> u64 {
-    o.get(k).and_then(Value::as_u64).unwrap_or(0)
+    o.get(k)
+        .and_then(|v| match v {
+            Value::Number(n) => n.as_u64(),
+            Value::String(s) => s.parse::<u64>().ok(),
+            _ => None,
+        })
+        .unwrap_or(0)
 }
 
 /// Převod řádku SQL → JSON objekt
@@ -70,6 +75,10 @@ fn get_interface_path(conn: &rusqlite::Connection, id: i64) -> Option<String> {
 /// --------------------------------------------------------------------------
 pub fn generate_report_ewfacquire(id: i64) -> Result<(), String> {
     println!("▶️  generate_report({id}) – START");
+    println!("Current dir: {:?}", std::env::current_dir());
+    println!("USER: {:?}", std::env::var("USER"));
+    println!("HOME: {:?}", std::env::var("HOME"));
+    println!("PATH: {:?}", std::env::var("PATH"));
 
     // 1️⃣  Načti agregovaný JSON z DB
     let mut report = get_report_json_data(id)?
@@ -134,14 +143,30 @@ pub fn generate_report_ewfacquire(id: i64) -> Result<(), String> {
     );
 
     let hash_types = gs(cfg, "hash_types");
-    ctx.insert("hash_type", hash_types);
+    let mut hash_type = String::from("MD5");
+    let hash_types_trimmed = hash_types
+        .split(',')
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(",");
+    if !hash_types_trimmed.is_empty() {
+        hash_type.push(',');
+        hash_type.push_str(&hash_types_trimmed);
+    }
+    ctx.insert("hash_type", &hash_type);
     ctx.insert("compression_method", gs(cfg, "compression_method"));
     ctx.insert("compression_level", gs(cfg, "compression_level"));
     ctx.insert("ewf_format", gs(cfg, "ewf_format"));
     ctx.insert("segment_size", gs(cfg, "segment_size"));
     ctx.insert("granularity_sectors", gs(cfg, "granularity_sectors"));
-    ctx.insert("swap_byte_pairs", &cfg["swap_byte_pairs"]);
-    ctx.insert("hash_enabled", &(!hash_types.trim().is_empty()));
+    let swap_byte_pairs = cfg
+        .get("swap_byte_pairs")
+        .and_then(Value::as_i64)
+        .unwrap_or(0)
+        == 1;
+    ctx.insert("swap_byte_pairs", &swap_byte_pairs);
+    ctx.insert("hash_enabled", &true);
     ctx.insert("verify_hash", &false);
     ctx.insert("unlock_hpa", &false);
     ctx.insert("unlock_dco", &false);
@@ -177,7 +202,7 @@ pub fn generate_report_ewfacquire(id: i64) -> Result<(), String> {
     ctx.insert("segment_serial", &seg_serial);
     ctx.insert("segment_file", &seg_file);
     ctx.insert("segment_path", &seg_path);
-    ctx.insert("image_path",   &seg_path); 
+    ctx.insert("image_path", &seg_path);
 
     // ---------- Segment #2 (volitelný) -------------------------------------
     let mut seg2_uid = String::new();
@@ -224,12 +249,19 @@ pub fn generate_report_ewfacquire(id: i64) -> Result<(), String> {
 
     // --- časy
     let fmt = "%Y-%m-%d %H:%M:%S";
-    let t_start = NaiveDateTime::parse_from_str(gs(proc, "start_datetime"), fmt).ok();
-    let t_end = NaiveDateTime::parse_from_str(gs(proc, "end_datetime"), fmt).ok();
+    let t_start_str = gs(proc, "start_datetime");
+    let t_start = NaiveDateTime::parse_from_str(&t_start_str, fmt)
+        .ok()
+        .and_then(|dt| Utc.from_local_datetime(&dt).single())
+        .map(|dt| dt.with_timezone(&Local));
     if let Some(s) = t_start {
         ctx.insert("time_started", &s.format("%H:%M:%S %-d.%-m.%Y").to_string());
     }
-    if let Some(c) = NaiveDateTime::parse_from_str(gs(&log_map, "end_datetime"), fmt).ok() {
+    let t_end = NaiveDateTime::parse_from_str(gs(&log_map, "end_datetime"), fmt)
+        .ok()
+        .and_then(|dt| Utc.from_local_datetime(&dt).single())
+        .map(|dt| dt.with_timezone(&Local));
+    if let Some(c) = t_end {
         ctx.insert(
             "time_complete",
             &c.format("%H:%M:%S %-d.%-m.%Y").to_string(),
@@ -249,10 +281,40 @@ pub fn generate_report_ewfacquire(id: i64) -> Result<(), String> {
         .unwrap_or_else(|| "N/A".into());
     ctx.insert("duration", &duration);
 
-    // LBA & sector
     let sdisk = report["source_disk"].as_object().unwrap_or(&EMPTY_MAP);
-    ctx.insert("lba_count", &gu(sdisk, "capacity_bytes"));
-    ctx.insert("sector_size", &gu(sdisk, "logical_sector_size"));
+
+    // Získání hodnot z log_record (nebo odkud je máš v JSONu)
+    let log = report["log_record"].as_object().unwrap_or(&EMPTY_MAP);
+    let offset = gu(log, "offset");
+    let bytes_to_read = gu(log, "bytes_to_read");
+    let sector_size = gu(sdisk, "logical_sector_size");
+    let cap = gu(sdisk, "capacity_bytes");
+
+    let lba_count = if offset == 0 && bytes_to_read == 0 {
+        if sector_size > 0 {
+            cap / sector_size
+        } else {
+            0
+        }
+    } else if bytes_to_read > 0 && sector_size > 0 {
+        bytes_to_read / sector_size
+    } else if offset > 0 && bytes_to_read == 0 && sector_size > 0 {
+        (cap - offset) / sector_size
+    } else {
+        0
+    };
+    ctx.insert("lba_count", &lba_count);
+
+    ctx.insert("offset", &offset);
+    if offset == 0 && bytes_to_read == 0 {
+        ctx.insert("bytes_to_read", "Whole Disk");
+    } else if offset > 0 && bytes_to_read == 0 {
+        ctx.insert("bytes_to_read", &(cap - offset));
+    } else {
+        ctx.insert("bytes_to_read", &bytes_to_read);
+    }
+
+    ctx.insert("sector_size", &sector_size);
 
     // hashes
     let mut hashes = Vec::<(String, String)>::new();
@@ -439,9 +501,23 @@ pub fn generate_report_ewfacquire(id: i64) -> Result<(), String> {
 
     fs::write("/home/master/Dokumenty/debug_output.tex", &latex).map_err(|e| e.to_string())?;
 
-    println!("🚀  Tectonic → PDF …");
-    let pdf = tectonic::latex_to_pdf(&latex).map_err(|e| format!("{e:?}"))?;
-    fs::write("/home/master/Dokumenty/output.pdf", &pdf).map_err(|e| e.to_string())?;
+    println!("🚀  Tectonic → PDF (external process) …");
+    let tectonic_status = std::process::Command::new("tectonic")
+        .arg("--outdir")
+        .arg("/home/master/Dokumenty")
+        .arg("/home/master/Dokumenty/debug_output.tex")
+        .status()
+        .map_err(|e| format!("Failed to run tectonic: {e}"))?;
+
+    if !tectonic_status.success() {
+        return Err(format!(
+            "Tectonic failed with exit code: {:?}",
+            tectonic_status.code()
+        ));
+    }
+
+    // Načti PDF z výsledného souboru
+    let pdf = fs::read("/home/master/Dokumenty/debug_output.pdf").map_err(|e| e.to_string())?;
 
     // -------- uložení na disky ---------------------------------------------
     let save_pdf = |key: &str, pdf: &[u8]| -> std::io::Result<()> {
@@ -473,11 +549,8 @@ pub fn generate_report_ewfacquire(id: i64) -> Result<(), String> {
     Ok(())
 }
 
-
-
-
 pub fn generate_report_dcfldd(id: i64) -> Result<(), String> {
-    println!("▶️  generate_report({id}) – START");
+    println!("▶️  generate_report_dcfldd({id}) – START");
 
     // 1️⃣  Načti agregovaný JSON z DB
     let mut report = get_report_json_data(id)?
@@ -514,15 +587,411 @@ pub fn generate_report_dcfldd(id: i64) -> Result<(), String> {
     println!("✅  disky načteny");
 
     let root_value = Value::Object(report.clone());
-    // debug‐print celého JSON
     println!(
         "DEBUG root JSON:\n{}",
         serde_json::to_string_pretty(&root_value).unwrap()
     );
 
+    // 2️⃣  Sestavení Tera Contextu
+    let mut ctx = Context::new();
+    let now = Local::now();
+    ctx.insert("date", &now.format("%b %d, %Y").to_string());
+    ctx.insert("time_local", &now.format("%H:%M:%S (%Z)").to_string());
+    ctx.insert("software_hash", "75f1c14d734ea09147330fae210faa54");
+    ctx.insert("build_date", "Jul 08, 2024 13:38:46 PDT");
+    ctx.insert("serial_number", "117495");
+
+    let cfg = report["config_record"].as_object().unwrap();
+    let proc = report["copy_process"].as_object().unwrap();
+    ctx.insert("mode", "DriveToFile");
+    ctx.insert("method", "dcfldd");
+
+    let hash_types = gs(cfg, "hash_types");
+    let mut hash_type = String::from("MD5");
+    let hash_types_trimmed = hash_types
+        .split(',')
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty() && s != "MD5")
+        .collect::<Vec<_>>()
+        .join(", ");
+    if !hash_types_trimmed.is_empty() {
+        hash_type.push_str(", ");
+        hash_type.push_str(&hash_types_trimmed);
+    }
+    ctx.insert("hash_type", &hash_type);
+
+    let split = gs(cfg, "split");
+    if split == "whole" {
+        ctx.insert("segment_size", "Whole Disk");
+    } else {
+        ctx.insert("segment_size", split);
+    }
+    ctx.insert("granularity_sectors", "");
+    ctx.insert("swap_byte_pairs", &false);
+    ctx.insert("hash_enabled", &true);
+
+    ctx.insert("verify_hash", &false);
+    ctx.insert("unlock_hpa", &false);
+    ctx.insert("unlock_dco", &false);
+
+    // ---------- Segment #1 -------------------------------------------------
+    let mut seg_uid = String::new();
+    let mut seg_fs = String::new();
+    let mut seg_serial = String::new();
+    let mut seg_file = String::new();
+    let mut seg_path = String::new();
+
+    if let Some(dest) = report["dest_disk"].as_object() {
+        if let Some(part) = dest
+            .get("partitions")
+            .and_then(Value::as_array)
+            .and_then(|a| a.iter().find(|p| p.get("mountpoint").is_some()))
+        {
+            let po = part.as_object().unwrap();
+            seg_uid = gs(po, "uuid").into();
+            seg_fs = gs(po, "filesystem").into();
+            seg_serial = gs(dest, "serial").into();
+            seg_file = gs(&log_map, "evidence_number").into();
+            let mount = gs(po, "mountpoint");
+            seg_path = format!(
+                "{mount}/{}/{}/",
+                gs(&log_map, "case_number"),
+                gs(&log_map, "evidence_number")
+            );
+        }
+    }
+    ctx.insert("segment_uid", &seg_uid);
+    ctx.insert("segment_fs", &seg_fs);
+    ctx.insert("segment_serial", &seg_serial);
+    ctx.insert("segment_file", &seg_file);
+    ctx.insert("segment_path", &seg_path);
+    ctx.insert("image_path", &seg_path);
+
+    // ---------- Segment #2 (volitelný) -------------------------------------
+    let mut seg2_uid = String::new();
+    let mut seg2_fs = String::new();
+    let mut seg2_serial = String::new();
+    let mut seg2_file = String::new();
+    let mut seg2_path = String::new();
+
+    if let Some(dest2) = report["second_dest_disk"].as_object() {
+        if !dest2.is_empty() {
+            if let Some(part) = dest2
+                .get("partitions")
+                .and_then(Value::as_array)
+                .and_then(|a| a.iter().find(|p| p.get("mountpoint").is_some()))
+            {
+                let po = part.as_object().unwrap();
+                seg2_uid = gs(po, "uuid").into();
+                seg2_fs = gs(po, "filesystem").into();
+                seg2_serial = gs(dest2, "serial").into();
+                seg2_file = gs(&log_map, "evidence_number").into();
+                let mount = gs(po, "mountpoint");
+                seg2_path = format!(
+                    "{mount}/{}/{}/",
+                    gs(&log_map, "case_number"),
+                    gs(&log_map, "evidence_number")
+                );
+            }
+        }
+    }
+    ctx.insert("segment2_uid", &seg2_uid);
+    ctx.insert("segment2_fs", &seg2_fs);
+    ctx.insert("segment2_serial", &seg2_serial);
+    ctx.insert("segment2_file", &seg2_file);
+    ctx.insert("segment2_path", &seg2_path);
+
+    // ---------- další položky ----------------------------------------------
+    let result = match proc.get("status").and_then(Value::as_str) {
+        Some("done") => "SUCCESS",
+        Some("error") => "ERROR",
+        _ => "N/A",
+    };
+    ctx.insert("result", result);
+    ctx.insert("case_file", "CaseFile_001");
+
+    // --- časy
+    let fmt = "%Y-%m-%d %H:%M:%S";
+    let t_start_str = gs(proc, "start_datetime");
+    let t_start = NaiveDateTime::parse_from_str(&t_start_str, fmt)
+        .ok()
+        .and_then(|dt| Utc.from_local_datetime(&dt).single())
+        .map(|dt| dt.with_timezone(&Local));
+    if let Some(s) = t_start {
+        ctx.insert("time_started", &s.format("%H:%M:%S %-d.%-m.%Y").to_string());
+    }
+    let t_end = NaiveDateTime::parse_from_str(gs(&log_map, "end_datetime"), fmt)
+        .ok()
+        .and_then(|dt| Utc.from_local_datetime(&dt).single())
+        .map(|dt| dt.with_timezone(&Local));
+    if let Some(c) = t_end {
+        ctx.insert(
+            "time_complete",
+            &c.format("%H:%M:%S %-d.%-m.%Y").to_string(),
+        );
+    }
+    let duration = t_start
+        .zip(t_end)
+        .map(|(s, e)| e - s)
+        .map(|d| {
+            format!(
+                "{:02}:{:02}:{:02}",
+                d.num_hours(),
+                d.num_minutes() % 60,
+                d.num_seconds() % 60
+            )
+        })
+        .unwrap_or_else(|| "N/A".into());
+    ctx.insert("duration", &duration);
+
+    let sdisk = report["source_disk"].as_object().unwrap_or(&EMPTY_MAP);
+
+    // Získání hodnot z log_record (nebo odkud je máš v JSONu)
+    let log = report["log_record"].as_object().unwrap_or(&EMPTY_MAP);
+    let offset = gu(log, "offset");
+    let limit = gu(log, "limit_value");
+    let sector_size = gu(sdisk, "logical_sector_size");
+    let cap = gu(sdisk, "capacity_bytes");
+
+    let lba_count = if offset == 0 && limit == 0 {
+        if sector_size > 0 {
+            cap / sector_size
+        } else {
+            0
+        }
+    } else if limit > 0 {
+        limit
+    } else if offset > 0 && limit == 0 && sector_size > 0 {
+        (cap - offset) / sector_size
+    } else {
+        0
+    };
+    ctx.insert("lba_count", &lba_count);
+
+    ctx.insert("offset", &offset);
+    if offset == 0 && limit == 0 {
+        ctx.insert("bytes_to_read", "Whole Disk");
+    } else if offset > 0 && limit == 0 {
+        ctx.insert("bytes_to_read", &(cap - offset));
+    } else {
+        ctx.insert("bytes_to_read", &(limit * sector_size));
+    }
+
+    ctx.insert("sector_size", &sector_size);
+
+    // hashes
+    let mut hashes = Vec::<(String, String)>::new();
+    for (t, k) in [
+        ("MD5", "md5_hash"),
+        ("SHA1", "sha1_hash"),
+        ("SHA256", "sha256_hash"),
+    ] {
+        if let Some(h) = log_map
+            .get(k)
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+        {
+            hashes.push((t.into(), h.into()));
+        }
+    }
+    ctx.insert("hashes", &hashes);
+
+    // case info
+    ctx.insert("case_number", gs(&log_map, "case_number"));
+    ctx.insert("evidence_number", gs(&log_map, "evidence_number"));
+    ctx.insert("examiner", gs(&log_map, "investigator_name"));
+    ctx.insert("notes", gs(&log_map, "notes"));
+
+    // ---------- tabulky drives / capacities / encryption -------------------
+    let mut drives = Vec::<Map<String, Value>>::new();
+    let mut caps = Vec::<Map<String, Value>>::new();
+    let mut encs = Vec::<Map<String, Value>>::new();
+
+    let push_disk = |vd: &mut Vec<Map<String, Value>>,
+                     vc: &mut Vec<Map<String, Value>>,
+                     ve: &mut Vec<Map<String, Value>>,
+                     disk: &Value,
+                     bay: &str,
+                     role: &str| {
+        let o = match disk.as_object() {
+            Some(m) if !m.is_empty() => m,
+            _ => return,
+        };
+        // drives
+        let mut d = Map::new();
+        d.insert("bay".into(), vstr(bay));
+        d.insert("role".into(), vstr(role));
+        d.insert("serial".into(), vstr(gs(o, "serial")));
+        d.insert("model".into(), vstr(gs(o, "model")));
+        let fs = o
+            .get("partitions")
+            .and_then(Value::as_array)
+            .and_then(|a| a.get(0))
+            .and_then(|p| p.get("filesystem").and_then(Value::as_str))
+            .unwrap_or("");
+        d.insert("fs".into(), vstr(fs));
+        d.insert(
+            "cipher".into(),
+            vstr(gs(o, "disk_encryption").if_empty_then("None")),
+        );
+        vd.push(d);
+
+        // caps
+        let mut c = Map::new();
+        let bytes = gu(o, "capacity_bytes");
+        c.insert("bay".into(), vstr(bay));
+        c.insert("serial".into(), vstr(gs(o, "serial")));
+        c.insert("model".into(), vstr(gs(o, "model")));
+        c.insert("capacity_bytes".into(), vu64(bytes));
+        c.insert(
+            "capacity_gb".into(),
+            vstr(format!("{:.1}", bytes as f64 / 1e9)),
+        );
+        vc.push(c);
+
+        // encryption
+        let mut e = Map::new();
+        let yes = |b| if b { "Yes" } else { "No" };
+        e.insert("bay".into(), vstr(bay));
+        e.insert("role".into(), vstr(role));
+        e.insert(
+            "ata_encryption".into(),
+            vstr(yes(o
+                .get("ata_encryption")
+                .and_then(Value::as_bool)
+                .unwrap_or(false))),
+        );
+        e.insert(
+            "sed_encryption".into(),
+            vstr(yes(o
+                .get("sed_encryption")
+                .and_then(Value::as_bool)
+                .unwrap_or(false))),
+        );
+        e.insert(
+            "locked".into(),
+            vstr(yes(!o
+                .get("readable")
+                .and_then(Value::as_bool)
+                .unwrap_or(true))),
+        );
+        ve.push(e);
+    };
+
+    push_disk(
+        &mut drives,
+        &mut caps,
+        &mut encs,
+        &report["source_disk"],
+        "1",
+        "Source",
+    );
+    push_disk(
+        &mut drives,
+        &mut caps,
+        &mut encs,
+        &report["dest_disk"],
+        "2",
+        "Destination",
+    );
+    push_disk(
+        &mut drives,
+        &mut caps,
+        &mut encs,
+        &report["second_dest_disk"],
+        "3",
+        "Secondary Destination",
+    );
+
+    ctx.insert("drives", &drives);
+    ctx.insert("capacities", &caps);
+    ctx.insert("encryption", &encs);
+
+    // ---------- partitions --------------------------------------------------
+    let mut parts = Vec::<Map<String, Value>>::new();
+    if let Some(arr) = sdisk.get("partitions").and_then(Value::as_array) {
+        for p in arr {
+            let o = p.as_object().unwrap();
+            let start = gu(o, "start_sector");
+            let end = gu(o, "end_sector");
+            let size_mb = ((end + 1).saturating_sub(start)) as f64 * 512.0 / 1_048_576.0;
+            let mut m = Map::new();
+            m.insert(
+                "index".into(),
+                vu64(o.get("index").and_then(Value::as_u64).unwrap_or(0)),
+            );
+            m.insert("fs".into(), vstr(gs(o, "filesystem")));
+            m.insert("start".into(), vu64(start));
+            m.insert("end".into(), vu64(end));
+            m.insert("size".into(), vstr(format!("{:.1} MB", size_mb)));
+            parts.push(m);
+        }
+    }
+    ctx.insert("source_partitions", &parts);
+
+    // 3️⃣  Render
+    println!("🚧  Renderuji Tera …");
+
+    let latex = match Tera::one_off(TEMPLATE_EN_DD, &ctx, false) {
+        Ok(l) => l,
+        Err(err) => {
+            eprintln!("❌  Tera render error: {:#?}", err);
+            eprintln!("└── {}", err);
+            if let Ok(json) = serde_json::to_string_pretty(&ctx.clone().into_json()) {
+                let _ = fs::write("/home/master/Dokumenty/ctx_dump.json", json);
+                eprintln!("💾  uložen ctx_dump.json");
+            }
+            return Err(format!("Render selhal: {err}"));
+        }
+    };
+
+    fs::write("/home/master/Dokumenty/debug_output.tex", &latex).map_err(|e| e.to_string())?;
+
+    println!("🚀  Tectonic → PDF (external process) …");
+    let tectonic_status = std::process::Command::new("tectonic")
+        .arg("--outdir")
+        .arg("/home/master/Dokumenty")
+        .arg("/home/master/Dokumenty/debug_output.tex")
+        .status()
+        .map_err(|e| format!("Failed to run tectonic: {e}"))?;
+
+    if !tectonic_status.success() {
+        return Err(format!(
+            "Tectonic failed with exit code: {:?}",
+            tectonic_status.code()
+        ));
+    }
+
+    let pdf = fs::read("/home/master/Dokumenty/debug_output.pdf").map_err(|e| e.to_string())?;
+
+    let save_pdf = |key: &str, pdf: &[u8]| -> std::io::Result<()> {
+        let disk = report[key].as_object().unwrap_or(&EMPTY_MAP);
+        let base = disk
+            .get("partitions")
+            .and_then(Value::as_array)
+            .and_then(|a| a.iter().find(|p| p.get("mountpoint").is_some()))
+            .and_then(|p| p.get("mountpoint").and_then(Value::as_str))
+            .map(|mp| {
+                format!(
+                    "{mp}/{}/{}/",
+                    gs(&log_map, "case_number"),
+                    gs(&log_map, "evidence_number")
+                )
+            });
+        if let Some(mut dir) = base {
+            fs::create_dir_all(&dir)?;
+            dir.push_str("audit-report.pdf");
+            fs::write(dir, pdf)?;
+        }
+        Ok(())
+    };
+    save_pdf("dest_disk", &pdf)
+        .and(save_pdf("second_dest_disk", &pdf))
+        .map_err(|e| e.to_string())?;
+
+    println!("🏁  generate_report_dcfldd({id}) – DONE");
     Ok(())
 }
-
 
 /// ------------ Načtení všech potřebných dat z DB --------------------------
 pub fn get_report_json_data(copy_id: i64) -> Result<Value, String> {
@@ -605,7 +1074,6 @@ pub fn get_report_json_data(copy_id: i64) -> Result<Value, String> {
     root.insert("copy_process".into(), copy_process);
     root.insert("log_record".into(), log_record);
     root.insert("config_record".into(), cfg_record);
-    
 
     Ok(Value::Object(root))
 }

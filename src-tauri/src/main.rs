@@ -50,10 +50,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Konec TEST */
 
 
-   report::generate_report_dcfldd(1)?;
-    
-    
-
     Builder::default()
         .plugin(tauri_plugin_websocket::init())
         .plugin(shell_init())

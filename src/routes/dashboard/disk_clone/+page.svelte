@@ -83,6 +83,7 @@
 	async function loadConfigs() {
 		try {
 			configs = await invoke('get_all_active_configs');
+			console.log('Loaded configs:', configs);
 		} catch (error) {
 			console.error('Error fetching configs:', error);
 		}
@@ -99,6 +100,9 @@
 		configSelected = true;
 		currentStep = 0;
 	}
+
+	$: sectorCount = $copyRunStore.inputDisk?.sector_count || 100;
+	$: sectorSize = $copyRunStore.inputDisk?.sector_size || 512;
 
 	$: maxBytes = (() => {
 		const st = $copyRunStore;
@@ -172,7 +176,7 @@
 									}
 								]
 							: []),
-						...(selectedConfig.offset === 'ask' && selectedConfig.limit === 'ask'
+						...(selectedConfig.offset === 'ask' && selectedConfig.limit_mode === 'ask'
 							? [
 									{
 										label: 'Offset + Limit',
@@ -182,7 +186,7 @@
 								]
 							: selectedConfig.offset === 'ask'
 								? [{ label: 'Offset only', description: 'Zadejte offset', offsetStep: true }]
-								: selectedConfig.limit === 'ask'
+								: selectedConfig.limit_mode === 'ask'
 									? [{ label: 'Limit only', description: 'Zadejte limit', bytesStep: true }]
 									: [])
 					]
@@ -216,8 +220,8 @@
 		}
 		const diskPath = `/dev/disk/by-path/${sourceDisk.interface}`;
 		try {
-			const diskInfo = await invoke('get_disk_info', { device: diskPath }) as any;
-			
+			const diskInfo = (await invoke('get_disk_info', { device: diskPath })) as any;
+
 			if (diskInfo.dco !== 0 || diskInfo.has_hpa === true || diskInfo.readable === false) {
 				warningData = {
 					dco: diskInfo.dco,
@@ -256,7 +260,6 @@
 			handleFinalStep();
 		}
 	}
-
 
 	async function runEwfAcquire() {
 		try {
@@ -309,7 +312,6 @@
 		}
 	}
 
-	// Spuštění DD
 	async function runDdAcquire() {
 		try {
 			const config_id = selectedConfig.id;
@@ -319,14 +321,16 @@
 			const { case_number, description, investigator_name, evidence_number, notes, offset, limit } =
 				$copyRunStore.ddParams;
 
+			const sectorSize = $copyRunStore.inputDisk?.sector_size || 512;
+
 			const dd_params = {
 				case_number,
 				description,
 				investigator_name,
 				evidence_number,
 				notes,
-				offset: offset[0],
-				limit: limit[0]
+				offset: offset[0], 
+				limit: limit[0] * sectorSize
 			};
 
 			console.log('Running DD acquire with:', {
@@ -535,62 +539,56 @@
 							/>
 						{/if}
 
-						<!-- rangeStep => offset + bytes/limit, ale Skeleton Slider nepodporuje 2 handle => dva slidery -->
+						<!-- rangeStep => offset + bytes/limit -->
 					{:else if stepsToUse[currentStep].rangeStep}
 						{#if value === 0}
-							<!-- EWF: offset a bytes_to_read -->
-							<label>Offset</label>
+							<!-- EWF: offset a bytes_to_read v sektorech -->
+							<label>Rozsah (Offset + Bytes to read) [LBA sektory]</label>
 							<Slider
-								value={$copyRunStore.ewfParams.offset}
-								max={maxBytes}
+								value={[
+									$copyRunStore.ewfParams.offset[0],
+									$copyRunStore.ewfParams.offset[0] +
+										Math.floor($copyRunStore.ewfParams.bytes_to_read[0] / sectorSize)
+								]}
+								max={sectorCount}
 								onValueChange={(event) => {
+									const [start, end] = event.value;
 									copyRunStore.update((state) => {
-										state.ewfParams.offset = event.value;
+										state.ewfParams.offset = [start];
+										state.ewfParams.bytes_to_read = [(end - start) * sectorSize];
 										return state;
 									});
 								}}
 							/>
-							<p class="mt-2">Offset: {$copyRunStore.ewfParams.offset}</p>
-
-							<label>Bytes to read</label>
-							<Slider
-								value={$copyRunStore.ewfParams.bytes_to_read}
-								max={maxBytes}
-								onValueChange={(event) => {
-									copyRunStore.update((state) => {
-										state.ewfParams.bytes_to_read = event.value;
-										return state;
-									});
-								}}
-							/>
-							<p class="mt-2">Bytes: {$copyRunStore.ewfParams.bytes_to_read}</p>
+							<p class="mt-2">
+								Offset: {$copyRunStore.ewfParams.offset[0]} ({$copyRunStore.ewfParams.offset[0] *
+									sectorSize} B), Bytes to read: {Math.floor(
+									$copyRunStore.ewfParams.bytes_to_read[0] / sectorSize
+								)} sektorů ({$copyRunStore.ewfParams.bytes_to_read[0]} B)
+							</p>
 						{:else}
-							<!-- DD: offset a limit -->
-							<label>Offset</label>
+							<!-- DD: offset a limit v sektorech -->
+							<label>Rozsah (Offset + Limit) [LBA sektory]</label>
 							<Slider
-								value={$copyRunStore.ddParams.offset}
-								max={maxBytes}
+								value={[
+									$copyRunStore.ddParams.offset[0],
+									$copyRunStore.ddParams.offset[0] + $copyRunStore.ddParams.limit[0]
+								]}
+								max={sectorCount}
 								onValueChange={(event) => {
+									const [start, end] = event.value;
 									copyRunStore.update((state) => {
-										state.ddParams.offset = event.value;
+										state.ddParams.offset = [start];
+										state.ddParams.limit = [end - start];
 										return state;
 									});
 								}}
 							/>
-							<p class="mt-2">Offset: {$copyRunStore.ddParams.offset}</p>
-
-							<label>Limit</label>
-							<Slider
-								value={$copyRunStore.ddParams.limit}
-								max={maxBytes}
-								onValueChange={(event) => {
-									copyRunStore.update((state) => {
-										state.ddParams.limit = event.value;
-										return state;
-									});
-								}}
-							/>
-							<p class="mt-2">Limit: {$copyRunStore.ddParams.limit}</p>
+							<p class="mt-2">
+								Offset: {$copyRunStore.ddParams.offset[0]} sektorů ({$copyRunStore.ddParams
+									.offset[0] * sectorSize} B), Limit: {$copyRunStore.ddParams.limit[0]} sektorů ({$copyRunStore
+									.ddParams.limit[0] * sectorSize} B)
+							</p>
 						{/if}
 
 						<!-- offsetStep (jedno slider) -->
@@ -599,7 +597,7 @@
 							<Slider
 								dir="rtl"
 								value={$copyRunStore.ewfParams.offset}
-								max={maxBytes}
+								max={sectorCount}
 								onValueChange={(event) => {
 									copyRunStore.update((state) => {
 										state.ewfParams.offset = event.value;
@@ -607,12 +605,15 @@
 									});
 								}}
 							/>
-							<p class="mt-2">Offset: {$copyRunStore.ewfParams.offset}</p>
+							<p class="mt-2">
+								Offset: {$copyRunStore.ewfParams.offset[0]} sektorů ({$copyRunStore.ewfParams
+									.offset[0] * sectorSize} B)
+							</p>
 						{:else}
 							<Slider
 								dir="rtl"
 								value={$copyRunStore.ddParams.offset}
-								max={maxBytes}
+								max={sectorCount}
 								onValueChange={(event) => {
 									copyRunStore.update((state) => {
 										state.ddParams.offset = event.value;
@@ -620,29 +621,33 @@
 									});
 								}}
 							/>
-							<p class="mt-2">Offset: {$copyRunStore.ddParams.offset}</p>
+							<p class="mt-2">
+								Offset: {$copyRunStore.ddParams.offset[0]} sektorů ({$copyRunStore.ddParams
+									.offset[0] * sectorSize} B)
+							</p>
 						{/if}
 
-						<!-- bytesStep (u EWF) / limitStep (u DD) -->
+						<!-- bytesStep (EWF) / limitStep (DD) -->
 					{:else if stepsToUse[currentStep].bytesStep}
 						{#if value === 0}
-							<!-- EWF: bytes_to_read -->
 							<Slider
-								value={$copyRunStore.ewfParams.bytes_to_read}
-								max={maxBytes}
+								value={[$copyRunStore.ewfParams.bytes_to_read[0] / sectorSize]}
+								max={sectorCount}
 								onValueChange={(event) => {
 									copyRunStore.update((state) => {
-										state.ewfParams.bytes_to_read = event.value;
+										state.ewfParams.bytes_to_read = [event.value[0] * sectorSize];
 										return state;
 									});
 								}}
 							/>
-							<p class="mt-2">Bytes: {$copyRunStore.ewfParams.bytes_to_read}</p>
+							<p class="mt-2">
+								Bytes to read: {Math.floor($copyRunStore.ewfParams.bytes_to_read[0] / sectorSize)} sektorů
+								({$copyRunStore.ewfParams.bytes_to_read[0]} B)
+							</p>
 						{:else}
-							<!-- DD: limit -->
 							<Slider
 								value={$copyRunStore.ddParams.limit}
-								max={maxBytes}
+								max={sectorCount}
 								onValueChange={(event) => {
 									copyRunStore.update((state) => {
 										state.ddParams.limit = event.value;
@@ -650,7 +655,10 @@
 									});
 								}}
 							/>
-							<p class="mt-2">Limit: {$copyRunStore.ddParams.limit}</p>
+							<p class="mt-2">
+								Limit: {$copyRunStore.ddParams.limit[0]} sektorů ({$copyRunStore.ddParams.limit[0] *
+									sectorSize} B)
+							</p>
 						{/if}
 
 						<!-- Obecný field (case_number, description, investigator_name, evidence_number apod.) -->
@@ -682,7 +690,12 @@
 				<button type="button" class="btn bg-surface-800" on:click={prevStep} disabled={isFirstStep}>
 					<span>Předchozí</span>
 				</button>
-				<button type="button" class="btn bg-surface-800" on:click={isLastStep ? handleFinalStep : nextStep} disabled={!canProceed}>
+				<button
+					type="button"
+					class="btn bg-surface-800"
+					on:click={isLastStep ? handleFinalStep : nextStep}
+					disabled={!canProceed}
+				>
 					<span>{isLastStep ? 'Dokončit' : 'Další'}</span>
 				</button>
 			</nav>
@@ -692,11 +705,7 @@
 
 <DiskSelectModal bind:openState={DiskSelectModalOpen} side={modalSide} />
 
-<WarningModal
-    bind:openState={WarningModalOpen}
-    {warningData}
-    onResult={handleWarningResult}
-/>
+<WarningModal bind:openState={WarningModalOpen} {warningData} onResult={handleWarningResult} />
 
 <VirtualKeyboard
 	bind:showKeyboard

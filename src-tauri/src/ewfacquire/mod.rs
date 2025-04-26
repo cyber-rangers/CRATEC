@@ -12,7 +12,7 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 use tauri_plugin_shell::ShellExt;
-
+use crate::report::generate_report_ewfacquire;
 use tauri_plugin_shell::process::CommandEvent;
 
 fn execute_with_retry<T, F>(operation_name: &str, mut f: F, max_retries: usize) -> Result<T, String>
@@ -76,8 +76,8 @@ pub struct EwfParams {
     pub investigator_name: String,
     pub evidence_number: String,
     pub notes: String,
-    pub offset: i32,
-    pub bytes_to_read: i32,
+    pub offset: u64,
+    pub bytes_to_read: u64,
 }
 
 #[derive(Debug)]
@@ -160,6 +160,7 @@ pub async fn run_ewfacquire(
     let actual_input_device = format!("/dev/disk/by-path/{}", strip_dev_prefix(&input_interface));
 
     if output_interfaces.is_empty() {
+        log_error("(run_ewfacquire) No output disks provided!");
         return Err("(run_ewfacquire) No output disks provided!".to_string());
     }
     let first_output = format!(
@@ -222,7 +223,10 @@ pub async fn run_ewfacquire(
             let _ = conn.busy_timeout(Duration::from_secs(120));
             let tx = conn
                 .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-                .map_err(|e| format!("(DB) Chyba při zahájení transakce: {}", e))?;
+                .map_err(|e| {
+                    log_error(&format!("(DB) Chyba při zahájení transakce: {}", e));
+                    format!("(DB) Chyba při zahájení transakce: {}", e)
+                })?;
 
             let config = {
                 let mut stmt = tx
@@ -235,7 +239,10 @@ pub async fn run_ewfacquire(
                          FROM ewf_config
                          WHERE id = ?1 AND active = 1",
                     )
-                    .map_err(|e| format!("(DB) Chyba při přípravě SQL dotazu: {}", e))?;
+                    .map_err(|e| {
+                        log_error(&format!("(DB) Chyba při přípravě SQL dotazu: {}", e)); // LOG
+                        format!("(DB) Chyba při přípravě SQL dotazu: {}", e)
+                    })?;
 
                 stmt.query_row([config_id], |row| {
                     Ok(EwfConfig {
@@ -259,7 +266,10 @@ pub async fn run_ewfacquire(
                         use_chunk_data: row.get(17)?,
                     })
                 })
-                .map_err(|e| format!("(DB) Chyba při získávání konfigurace: {}", e))?
+                .map_err(|e| {
+                    log_error(&format!("(DB) Chyba při získávání konfigurace: {}", e)); // LOG
+                    format!("(DB) Chyba při získávání konfigurace: {}", e)
+                })?
             };
 
             let source_disk_id: i64 = tx
@@ -269,10 +279,12 @@ pub async fn run_ewfacquire(
                     |row| row.get(0),
                 )
                 .map_err(|_| {
-                    format!(
+                    let msg = format!(
                         "(DB) Nepodařilo se najít source disk v tabulce interfaces: {}",
                         input_raw
-                    )
+                    );
+                    log_error(&msg);
+                    msg
                 })?;
 
             let first_output_id: i64 = tx
@@ -282,10 +294,12 @@ pub async fn run_ewfacquire(
                     |row| row.get(0),
                 )
                 .map_err(|_| {
-                    format!(
+                    let msg = format!(
                         "(DB) Nepodařilo se najít first_output disk v tabulce interfaces: {}",
                         first_output_raw
-                    )
+                    );
+                    log_error(&msg);
+                    msg
                 })?;
 
             let second_output_id = if output_interfaces_raw.len() > 1 {
@@ -297,10 +311,12 @@ pub async fn run_ewfacquire(
                         |row| row.get(0),
                     )
                     .map_err(|_| {
-                        format!(
+                        let msg = format!(
                             "(DB) Nepodařilo se najít second_output disk v tabulce interfaces: {}",
                             second_stripped
-                        )
+                        );
+                        log_error(&msg); // LOG
+                        msg
                     })?,
                 )
             } else {
@@ -336,7 +352,10 @@ pub async fn run_ewfacquire(
                     ewf_params_db.bytes_to_read
                 ],
             )
-            .map_err(|e| format!("(DB) Chyba při zápisu do copy_log_ewf: {}", e))?;
+            .map_err(|e| {
+                log_error(&format!("(DB) Chyba při zápisu do copy_log_ewf: {}", e));
+                format!("(DB) Chyba při zápisu do copy_log_ewf: {}", e)
+            })?;
 
             let copy_log_id = tx.last_insert_rowid();
 
@@ -351,15 +370,21 @@ pub async fn run_ewfacquire(
                         "INSERT INTO copy_process (triggered_by_ewf) VALUES (?1)",
                         rusqlite::params![copy_log_id],
                     )
-                    .map_err(|e2| format!("(DB) Chyba při zápisu do copy_process: {}", e2))?;
+                    .map_err(|e2| {
+                        log_error(&format!("(DB) Chyba při zápisu do copy_process: {}", e2));
+                        format!("(DB) Chyba při zápisu do copy_process: {}", e2)
+                    })?;
                 } else {
+                    log_error(&format!("(DB) Chyba při zápisu do copy_process: {}", e));
                     return Err(format!("(DB) Chyba při zápisu do copy_process: {}", e));
                 }
             }
 
             let process_id = tx.last_insert_rowid();
-            tx.commit()
-                .map_err(|e| format!("(DB) Chyba při potvrzení transakce: {}", e))?;
+            tx.commit().map_err(|e| {
+                log_error(&format!("(DB) Chyba při potvrzení transakce: {}", e));
+                format!("(DB) Chyba při potvrzení transakce: {}", e)
+            })?;
             Ok((config, process_id))
         })
         .await
@@ -373,7 +398,7 @@ pub async fn run_ewfacquire(
         let ws_update = WsProcessUpdate {
             msg_type: "ProcessFull".to_string(),
             id: process_id,
-            start_datetime: Utc::now().to_rfc3339(),
+            start_datetime: Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             end_datetime: None,
             status: "running".to_string(),
             triggered_by_ewf: true,
@@ -548,7 +573,6 @@ pub async fn run_ewfacquire(
         &format!("{}/copy", evidence_dir_1),
     );
 
-
     push_pair(
         &mut args_exec,
         &mut args_print,
@@ -582,6 +606,7 @@ pub async fn run_ewfacquire(
     args_print.push(format!("\"{}\"", actual_input_device));
 
     let full_command_print = format!("sudo ewfacquire {}", args_print.join(" "));
+    log_debug(&format!("Spouštím příkaz: {}", full_command_print));
     println!("Spouštím příkaz: {}", full_command_print);
 
     let shell = app_handle.shell();
@@ -590,7 +615,10 @@ pub async fn run_ewfacquire(
         .args(["ewfacquire"])
         .args(&args_exec)
         .spawn()
-        .map_err(|e| format!("(Command) Failed to spawn command: {}", e))?;
+        .map_err(|e| {
+            log_error(&format!("(Command) Failed to spawn command: {}", e));
+            format!("(Command) Failed to spawn command: {}", e)
+        })?;
 
     let mut md5_hash: Option<String> = None;
     let mut sha1_hash: Option<String> = None;
@@ -734,13 +762,7 @@ pub async fn run_ewfacquire(
                     final_status
                 );
 
-                if final_status == "done" {
-                    if let Err(e) = crate::report::generate_report_ewfacquire(process_id) {
-                        eprintln!("Chyba při generování reportu: {}", e);
-                    }
-                }
-
-                let end_time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                let end_time = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
                 let end_time_for_db = end_time.clone();
 
                 tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
@@ -777,6 +799,13 @@ pub async fn run_ewfacquire(
                 })
                 .await
                 .map_err(|e| e.to_string())??;
+
+                if final_status == "done" {
+                    let report_result = generate_report_ewfacquire(process_id);
+                    if let Err(e) = report_result {
+                        eprintln!("Chyba při generování reportu: {}", e);
+                    }
+                }
 
                 let process_done = WsProcessDone {
                     msg_type: "ProcessDone".to_string(),
