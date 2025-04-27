@@ -169,6 +169,10 @@
         }
     }
 
+    function handleKeyboardInput(field: string, value: string) {
+        formData[field] = value;
+    }
+
     let showKeyboard = false;
     let activeInput = '';
 
@@ -677,6 +681,7 @@
     bind:activeInput
     bind:formData
     on:closeKeyboard={closeKeyboard}
+    onInputChange={handleKeyboardInput}
 />
 
 <style>

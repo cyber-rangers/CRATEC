@@ -6,8 +6,8 @@
 
 	export let showKeyboard: boolean;
 	export let activeInput: string;
-	
-	export let formData: Record<string, string | boolean | string[]>;
+	export let formData: Record<string, string | boolean | string[] | number[]>;
+	export let onInputChange: ((field: string, value: string) => void) | undefined;
 
 	let keyboardContainer: HTMLDivElement;
 	let keyboard: SimpleKeyboard | null = null;
@@ -71,6 +71,8 @@
 
 		if (typeof currentValue !== 'string') return;
 
+		let newValue = currentValue;
+
 		if (button === '{shift}') {
 			if (keyboard) {
 				const currentLayout = keyboard.options.layoutName;
@@ -79,16 +81,23 @@
 			}
 			return;
 		} else if (button === '{bksp}') {
-			formData[activeInput] = currentValue.slice(0, -1);
+			newValue = currentValue.slice(0, -1);
 		} else if (button === '{space}') {
-			formData[activeInput] = currentValue + ' ';
+			newValue = currentValue + ' ';
 		} else {
-			formData[activeInput] = currentValue + button;
+			newValue = currentValue + button;
+		}
+
+		// Změna hodnoty přes callback pokud je k dispozici
+		if (onInputChange) {
+			onInputChange(activeInput, newValue);
+		} else {
+			formData[activeInput] = newValue;
 		}
 
 		const inputEl = document.querySelector(`[name="${activeInput}"]`) as HTMLInputElement;
 		if (inputEl) {
-			inputEl.value = formData[activeInput] as string;
+			inputEl.value = newValue;
 			inputEl.focus();
 			const end = inputEl.value.length;
 			inputEl.setSelectionRange(end, end);

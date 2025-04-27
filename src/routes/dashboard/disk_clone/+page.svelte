@@ -80,6 +80,27 @@
 		activeInput = '';
 	}
 
+	function handleKeyboardInput(field: string, inputValue: string) {
+		// value je proměnná určující typ konfigurace (0 = EWF, 1 = DD)
+		if (value === 0) {
+			// EWF
+			copyRunStore.update((state) => {
+				if (field in state.ewfParams) {
+					(state.ewfParams as any)[field] = inputValue;
+				}
+				return state;
+			});
+		} else {
+			// DD
+			copyRunStore.update((state) => {
+				if (field in state.ddParams) {
+					(state.ddParams as any)[field] = inputValue;
+				}
+				return state;
+			});
+		}
+	}
+
 	async function loadConfigs() {
 		try {
 			configs = await invoke('get_all_active_configs');
@@ -329,7 +350,7 @@
 				investigator_name,
 				evidence_number,
 				notes,
-				offset: offset[0], 
+				offset: offset[0],
 				limit: limit[0] * sectorSize
 			};
 
@@ -708,10 +729,13 @@
 <WarningModal bind:openState={WarningModalOpen} {warningData} onResult={handleWarningResult} />
 
 <VirtualKeyboard
-	bind:showKeyboard
-	bind:activeInput
-	bind:formData
-	on:closeKeyboard={closeKeyboard}
+    bind:showKeyboard
+    bind:activeInput
+    formData={
+        ($copyRunStore[value === 0 ? 'ewfParams' : 'ddParams'] as unknown) as Record<string, string | boolean | string[] | number[]>
+    }
+    on:closeKeyboard={closeKeyboard}
+    onInputChange={handleKeyboardInput}
 />
 
 <style lang="postcss">

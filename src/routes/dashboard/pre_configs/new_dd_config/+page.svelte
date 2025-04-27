@@ -150,6 +150,9 @@
         }
     }
 
+    function handleKeyboardInput(field: string, value: string) {
+        formData[field] = value;
+    }
 
     async function onFormSubmit(): Promise<void> {
         try {
@@ -563,6 +566,7 @@
     bind:activeInput
     bind:formData
     on:closeKeyboard={closeKeyboard}
+    onInputChange={handleKeyboardInput}
 />
 
 <style>
