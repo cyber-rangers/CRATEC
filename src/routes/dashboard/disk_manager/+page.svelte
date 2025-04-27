@@ -193,7 +193,8 @@
         border-bottom: 1px solid #eee;
     }
     th {
-        background: #f8f8f8;
+        background: var(--color-surface-900);
+		color: white;
         text-align: left;
     }
     th:first-child, td:first-child {

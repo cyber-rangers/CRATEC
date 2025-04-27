@@ -11,6 +11,8 @@
 		X
 	} from 'lucide-svelte';
 	import { runningProcessesStore } from '$lib/stores/processStore';
+	import { get } from 'svelte/store';
+	import { deviceStore } from '$lib/stores/deviceStore';
 
 	// Stav modalu pro seznam procesů a drawer s logy
 	export let openState: boolean = false;
@@ -53,6 +55,26 @@
 		result += seconds + 's';
 		return result;
 	}
+
+	function getDeviceNameByInterface(iface: string): string {
+		const devices = [...get(deviceStore).usb_devices, ...get(deviceStore).sata_devices];
+		const found = devices.find((d) => d.interface === iface);
+		return found?.name || iface;
+	}
+
+	function getDeviceNameByMountpoint(mount: string): string {
+		const devices = [...get(deviceStore).usb_devices, ...get(deviceStore).sata_devices];
+		const found = devices.find((d) => d.mountpoint === mount);
+		return found?.name || mount;
+	}
+
+	function getDeviceNameByInterfacePath(path: string): string {
+		// Získá poslední část cesty
+		const iface = path.split('/').pop();
+		const devices = [...get(deviceStore).usb_devices, ...get(deviceStore).sata_devices];
+		const found = devices.find((d) => d.interface === iface);
+		return found?.name || iface || path;
+	}
 </script>
 
 <!-- Modal pro zobrazení aktivních procesů -->
@@ -66,9 +88,9 @@
 >
 	{#snippet content()}
 		<!-- Přidáno plovoucí zavírací tlačítko vpravo nahoře -->
-		<button 
-			type="button" 
-			class="absolute top-6 right-6 btn  preset-filled-surface-500 rounded-full w-10 h-10 p-0 flex items-center justify-center z-50"
+		<button
+			type="button"
+			class="btn preset-filled-surface-500 absolute top-6 right-6 z-50 flex h-10 w-10 items-center justify-center rounded-full p-0"
 			on:click={modalClose}
 			title="Zavřít"
 		>
@@ -78,86 +100,103 @@
 			<p class="text-center">Žádné aktivní procesy.</p>
 		{:else}
 			{#each $runningProcessesStore as process (process.id)}
+				{@html (() => {
+					console.log(process);
+					return '';
+				})()}
 				<div class="process-box mb-4 flex flex-col rounded-lg bg-white shadow-md">
 					<!-- Top section: stav, rychlost a tlačítko pro otevření draweru -->
 					<div class="top-section bg-surface-600 flex w-full rounded-t-lg py-4">
 						<div class="w-1/3 text-center">
 							<div class="flex items-center justify-center gap-2">
-									<p class="flex items-center gap-1">
-										Status: {process.status}
-										{#if process.status === 'running'}
-											<LoaderCircle class="animate-spin" />
-										{:else if process.status === 'error'}
-											<CircleAlert />
-										{:else if process.status === 'done'}
-											<CircleCheck />
-										{/if}
-									</p>
+								<p class="flex items-center gap-1">
+									Status: {process.status}
+									{#if process.status === 'running'}
+										<LoaderCircle class="animate-spin" />
+									{:else if process.status === 'error'}
+										<CircleAlert />
+									{:else if process.status === 'done'}
+										<CircleCheck />
+									{/if}
+								</p>
 							</div>
 						</div>
 						<div class="w-1/3 text-center">
-								<p>
-									{#if process.status === 'error'}
-										N/A
-									{:else if process.progress_perc === 100 && process.status === 'done'}
-										N/A
-									{:else}
-										{process.speed.toFixed(1)} MiB/s
-									{/if}
-								</p>
+							<p>
+								{#if process.status === 'error'}
+									N/A
+								{:else if process.progress_perc === 100 && process.status === 'done'}
+									N/A
+								{:else}
+									{process.speed.toFixed(1)} MiB/s
+								{/if}
+							</p>
 						</div>
 						<div class="flex w-1/3 items-center justify-end gap-2 pr-4 text-right">
-							<CircleX />
-							<!-- Kliknutím se otevře drawer a nastaví id procesu -->
 							<button on:click={() => openDrawerForProcess(process.id)}><SquareCode /></button>
 						</div>
 					</div>
 
 					<!-- Middle section: vstupní a výstupní disky -->
-					<div class="middle-section mt-0 w-full items-center py-1 text-center">
-						<div class="flex h-16 items-center justify-between">
-							<div
-								class="bg-surface-700-900 flex w-1/3 items-center justify-center gap-2 rounded p-1"
-							>
-								<p class="text-sm">IN</p>
-								<div class="connected-icon">
-									{#if process.source_disk.type === 'usb'}
-										<Usb size={25} />
-									{:else}
-										<HardDrive size={25} />
-									{/if}
-								</div>
-								<p class="text-sm">{process.source_disk.name}</p>
+					<div class="middle-section flex w-full items-stretch py-1 text-center">
+						<!-- Source disk (levý sloupec) -->
+						<div
+							class="bg-surface-700-900 flex w-1/3 flex-col items-center justify-center gap-2 rounded p-1"
+						>
+							<div class="flex items-center gap-2">
+								<div class="connected-icon"></div>
+								{#if getDeviceNameByInterfacePath(typeof process.source_disk === 'string' ? process.source_disk : process.source_disk?.interface || '')
+									?.toLowerCase()
+									.includes('usb')}
+									<Usb size={25} />
+								{:else}
+									<HardDrive size={25} />
+								{/if}
 							</div>
+							<p class="text-sm">
+								{getDeviceNameByInterfacePath(
+									typeof process.source_disk === 'string'
+										? process.source_disk
+										: process.source_disk?.interface || ''
+								)}
+							</p>
+						</div>
 
-							<div class="bg-surface-700-900 flex w-1/3 items-center justify-center rounded p-1">
-								<div class="arrow">
-									<span></span>
-									<span></span>
-									<span></span>
-								</div>
-							</div>
-
-							<div
-								class="bg-surface-700-900 flex w-1/3 flex-col items-center justify-center gap-1 rounded p-1"
-							>
-								{#each process.destination_disks as disk}
-									<div class="flex w-full items-center justify-center gap-1">
-										<p class="text-sm">OUT</p>
-										<div class="connected-icon">
-											{#if disk.type === 'usb'}
-												<Usb size={25} />
-											{:else}
-												<HardDrive size={25} />
-											{/if}
-										</div>
-										<p class="text-sm">{disk.interface}</p>
-									</div>
-								{/each}
+						<!-- Arrow (prostřední sloupec) -->
+						<div
+							class="bg-surface-700-900 flex w-1/3 flex-col items-center justify-center rounded p-1"
+						>
+							<div class="arrow">
+								<span></span>
+								<span></span>
+								<span></span>
 							</div>
 						</div>
-					</div>
 
+						<!-- Destination disks (pravý sloupec) -->
+						<div
+							class="bg-surface-700-900 flex w-1/3 flex-col items-center justify-center gap-1 rounded p-1"
+						>
+							{#each process.destination_disks as disk}
+								<div class="flex items-center gap-2">
+									<div class="connected-icon">
+										{#if getDeviceNameByMountpoint(typeof disk === 'string' ? disk : disk?.mountpoint || '')
+											?.toLowerCase()
+											.includes('usb')}
+											<Usb size={25} />
+										{:else}
+											<HardDrive size={25} />
+										{/if}
+									</div>
+									<p class="text-sm">
+										{getDeviceNameByMountpoint(
+											typeof disk === 'string' ? disk : disk?.mountpoint || ''
+										)}
+									</p>
+								</div>
+							{/each}
+						</div>
+					</div>
 					<!-- Bottom section: progress bar a čas -->
 					<div
 						class="bottom-section bg-surface-600 flex w-full items-center rounded-b-lg px-4 py-4"
@@ -200,19 +239,19 @@
 	>
 		{#snippet content()}
 			<!-- Close button positioned within the modal content but at the right edge -->
-			<button 
-				type="button" 
-				class="absolute -right-12 top-3 btn variant-filled rounded-full w-9 h-9 p-0 flex items-center justify-center" 
+			<button
+				type="button"
+				class="btn variant-filled absolute top-3 -right-12 flex h-9 w-9 items-center justify-center rounded-full p-0"
 				on:click={drawerClose}
 			>
 				<X size={20} />
 			</button>
-			
+
 			{#each $runningProcessesStore.filter((p) => p.id === selectedProcessId) as selected}
-			<article>
-				<pre class="pre max-h-142 overflow-y-auto">{#each selected.out_log as line}{line.trim()}
-		{/each}</pre>
-			</article>
+				<article>
+					<pre class="pre max-h-142 overflow-y-auto">{#each selected.out_log as line}{line.trim()}
+						{/each}</pre>
+				</article>
 			{:else}
 				<p class="text-center">Žádný proces není vybrán.</p>
 			{/each}
@@ -276,7 +315,7 @@
 	.drawer-container {
 		position: relative;
 	}
-	
+
 	/* Close drawer button positioning */
 	.close-drawer-btn {
 		position: fixed;
