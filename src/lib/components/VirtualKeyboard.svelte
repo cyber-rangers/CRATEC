@@ -121,20 +121,21 @@
 						'ě š č ř ž ý á í é -',
 						'q w e r t y u i o p {bksp}',
 						'a s d f g h j k l',
-						'{shift} z x c v b n m .',
+						'{shift} z x c v b n m _',
 						'{space}'
 					],
 					shift: [
 						'1 2 3 4 5 6 7 8 9 0',
 						'Q W E R T Y U I O P {bksp}',
 						'A S D F G H J K L',
-						'{shift} Z X C V B N M',
+						'{shift} Z X C V B N M _',
 						'{space}'
 					]
 				},
 				display: {
 					'{bksp}': '←',
-					'{space}': 'Space'
+					'{space}': 'Mezerník',
+					'{shift}': 'Caps',
 				},
 				maxLength: 12
 			});

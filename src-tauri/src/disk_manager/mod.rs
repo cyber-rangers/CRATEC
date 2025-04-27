@@ -50,8 +50,9 @@ pub fn get_directory_contents(mountpoint: &str) -> Result<Vec<FileItem>, String>
             0
         };
 
-        // Čas vytvoření (pokud je dostupný)
+        // Čas vytvoření (pokud je dostupný), jinak čas poslední změny
         let created = metadata.created()
+            .or_else(|_| metadata.modified())
             .ok()
             .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
             .map(|d| d.as_secs());

@@ -1,15 +1,18 @@
 <script lang="ts">
 	import { Usb, HardDrive } from 'lucide-svelte';
 	import { copyRunStore } from '$lib/stores/copyRunStore';
-	import { deviceStore } from '$lib/stores/deviceStore';
 	import { invoke } from '@tauri-apps/api/core';
 	import { onMount } from 'svelte';
 	import DiskSelectModal from '$lib/components/modals/DiskSelectModal.svelte';
 	import WarningModal from '$lib/components/modals/WarningModal.svelte';
 	import { Slider } from '@skeletonlabs/skeleton-svelte';
-	import { writable, type Writable } from 'svelte/store';
 	import type { EwfParams, DdParams } from '$lib/stores/copyRunStore';
 	import VirtualKeyboard from '$lib/components/VirtualKeyboard.svelte';
+	import { Toaster, createToaster } from '@skeletonlabs/skeleton-svelte';
+
+	const toaster = createToaster({
+		placement: 'top'
+	});
 
 	const defaultCopyRunState = {
 		inputDisk: null,
@@ -136,24 +139,28 @@
 		configSelected && selectedConfig
 			? value === 0
 				? [
-						{ label: 'Disk Selection', description: 'Vyberte disky' },
-						{ label: 'Case Number', description: 'Zadejte číslo případu', field: 'case_number' },
-						{ label: 'Description', description: 'Zadejte popis', field: 'description' },
+						{ label: 'Výběr disku', description: 'Vyberte disky' },
 						{
-							label: 'Investigator',
-							description: 'Zadejte jméno vyšetřovatele',
+							label: 'Číslo případu',
+							description: 'Zadejte číslo případu (Case number)',
+							field: 'case_number'
+						},
+						{ label: 'Popis', description: 'Zadejte popis (Description)', field: 'description' },
+						{
+							label: 'Vyšetřovatel',
+							description: 'Zadejte jméno vyšetřovatele (Investigator name)',
 							field: 'investigator_name'
 						},
 						{
-							label: 'Evidence No.',
-							description: 'Zadejte číslo důkazu',
+							label: 'Číslo důkazu',
+							description: 'Zadejte číslo důkazu (Evidence number)',
 							field: 'evidence_number'
 						},
 						...(selectedConfig.notes === 'ask'
 							? [
 									{
-										label: 'Notes',
-										description: 'Zadejte poznámky',
+										label: 'Poznámky',
+										description: 'Zadejte poznámky (Notes)',
 										field: 'notes',
 										notesStep: true
 									}
@@ -163,35 +170,45 @@
 							? [
 									{
 										label: 'Offset + Bytes',
-										description: 'Zadejte offset a kolik bajtů číst',
+										description: 'Zadejte offset a kolik bajtů číst (Offset + Bytes to read)',
 										rangeStep: true
 									}
 								]
 							: selectedConfig.offset === 'ask'
-								? [{ label: 'Offset only', description: 'Zadejte offset', offsetStep: true }]
+								? [{ label: 'Offset', description: 'Zadejte offset (Offset)', offsetStep: true }]
 								: selectedConfig.bytes_to_read === 'ask'
-									? [{ label: 'Bytes to read', description: 'Kolik bajtů číst', bytesStep: true }]
+									? [
+											{
+												label: 'Bytes to read',
+												description: 'Kolik bajtů číst (Bytes to read)',
+												bytesStep: true
+											}
+										]
 									: [])
 					]
 				: [
-						{ label: 'Disk Selection', description: 'Vyberte disky' },
-						{ label: 'Case Number', description: 'Zadejte číslo případu', field: 'case_number' },
-						{ label: 'Description', description: 'Zadejte popis', field: 'description' },
+						{ label: 'Výběr disku', description: 'Vyberte disky' },
 						{
-							label: 'Investigator',
-							description: 'Zadejte jméno vyšetřovatele',
+							label: 'Číslo případu',
+							description: 'Zadejte číslo případu (Case number)',
+							field: 'case_number'
+						},
+						{ label: 'Popis', description: 'Zadejte popis (Description)', field: 'description' },
+						{
+							label: 'Vyšetřovatel',
+							description: 'Zadejte jméno vyšetřovatele (Investigator name)',
 							field: 'investigator_name'
 						},
 						{
-							label: 'Evidence No.',
-							description: 'Zadejte číslo důkazu',
+							label: 'Číslo důkazu',
+							description: 'Zadejte číslo důkazu (Evidence number)',
 							field: 'evidence_number'
 						},
 						...(selectedConfig.notes === 'ask'
 							? [
 									{
-										label: 'Notes',
-										description: 'Zadejte poznámky',
+										label: 'Poznámky',
+										description: 'Zadejte poznámky (Notes)',
 										field: 'notes',
 										notesStep: true
 									}
@@ -201,14 +218,14 @@
 							? [
 									{
 										label: 'Offset + Limit',
-										description: 'Zadejte offset a limit',
+										description: 'Zadejte offset a limit (Offset + Limit)',
 										rangeStep: true
 									}
 								]
 							: selectedConfig.offset === 'ask'
-								? [{ label: 'Offset only', description: 'Zadejte offset', offsetStep: true }]
+								? [{ label: 'Offset', description: 'Zadejte offset (Offset)', offsetStep: true }]
 								: selectedConfig.limit_mode === 'ask'
-									? [{ label: 'Limit only', description: 'Zadejte limit', bytesStep: true }]
+									? [{ label: 'Limit', description: 'Zadejte limit (Limit)', bytesStep: true }]
 									: [])
 					]
 			: defaultSteps;
@@ -275,6 +292,41 @@
 	}
 
 	function nextStep() {
+		const checkFields = ['case_number', 'evidence_number'];
+		let invalidField = '';
+
+		if (
+			stepsToUse[currentStep]?.field &&
+			checkFields.includes(stepsToUse[currentStep].field as string)
+		) {
+			const field = stepsToUse[currentStep].field as string;
+			const valueToCheck =
+				value === 0
+					? $copyRunStore.ewfParams[field as keyof EwfParams]
+					: $copyRunStore.ddParams[field as keyof DdParams];
+
+			// Povolené znaky: písmena, čísla, _ a -
+			if (typeof valueToCheck === 'string' && !/^[A-Za-z0-9_-]*$/.test(valueToCheck)) {
+				invalidField = field;
+			}
+		}
+
+		if (invalidField) {
+			copyRunStore.update((state) => {
+				if (value === 0) {
+					(state.ewfParams as any)[invalidField] = '';
+				} else {
+					(state.ddParams as any)[invalidField] = '';
+				}
+				return state;
+			});
+			toaster.warning({
+				title: 'Neplatný znak',
+				description: 'Použijte pouze písmena, čísla, pomlčku nebo podtržítko.'
+			});
+			return;
+		}
+
 		if (!isLastStep) {
 			currentStep++;
 		} else {
@@ -320,9 +372,20 @@
 				ewf_params,
 				input_interface,
 				output_interfaces
-			}).then(() => {
-				console.log('Ewfacquire dokončeno.');
-			});
+			})
+				.then(() => {
+					toaster.success({
+						title: 'Proces spuštěn',
+						description: 'ewfacquire byl úspěšně spuštěn.'
+					});
+				})
+				.catch((error) => {
+					console.error('Chyba při spouštění ewfacquire:', error);
+					toaster.error({
+						title: 'Chyba',
+						description: 'Proces ewfacquire selhal při spuštění.'
+					});
+				});
 
 			configSelected = false;
 			processStarted = false;
@@ -366,9 +429,20 @@
 				dd_params,
 				input_interface,
 				output_interfaces
-			}).then(() => {
-				console.log('DD acquire completed.');
-			});
+			})
+				.then(() => {
+					toaster.success({
+						title: 'Proces spuštěn',
+						description: 'dcfldd byl úspěšně spuštěn.'
+					});
+				})
+				.catch((error) => {
+					console.error('Error running ddacquire:', error);
+					toaster.error({
+						title: 'Chyba',
+						description: 'Proces dcfldd selhal při spuštění.'
+					});
+				});
 
 			configSelected = false;
 			processStarted = false;
@@ -729,14 +803,17 @@
 <WarningModal bind:openState={WarningModalOpen} {warningData} onResult={handleWarningResult} />
 
 <VirtualKeyboard
-    bind:showKeyboard
-    bind:activeInput
-    formData={
-        ($copyRunStore[value === 0 ? 'ewfParams' : 'ddParams'] as unknown) as Record<string, string | boolean | string[] | number[]>
-    }
-    on:closeKeyboard={closeKeyboard}
-    onInputChange={handleKeyboardInput}
+	bind:showKeyboard
+	bind:activeInput
+	formData={$copyRunStore[value === 0 ? 'ewfParams' : 'ddParams'] as unknown as Record<
+		string,
+		string | boolean | string[] | number[]
+	>}
+	on:closeKeyboard={closeKeyboard}
+	onInputChange={handleKeyboardInput}
 />
+
+<Toaster {toaster} />
 
 <style lang="postcss">
 	/* Ponecháváme vaše původní styly: */
