@@ -1,17 +1,26 @@
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+use crate::config::MOUNT_ROOT; // přidej tento import
 
 /// Struktura, kterou vracíme do frontendu.
 #[derive(Serialize)]
 pub struct FileItem {
     pub name: String,
     pub file_type: String, // "folder" nebo "file"
+    pub size: u64,         // velikost v bajtech
+    pub created: Option<u64>, // unix timestamp v sekundách
 }
 
 /// Tato funkce projde daný adresář (mountpoint) a vrátí seznam FileItem
 #[tauri::command]
 pub fn get_directory_contents(mountpoint: &str) -> Result<Vec<FileItem>, String> {
+    // Bezpečnostní kontrola: povoleno pouze v MOUNT_ROOT
+    if !mountpoint.starts_with(MOUNT_ROOT) {
+        return Err(format!("Access denied: path {} is outside of MOUNT_ROOT", mountpoint));
+    }
+
     let mut results = Vec::new();
 
     let entries = fs::read_dir(mountpoint)
@@ -34,7 +43,20 @@ pub fn get_directory_contents(mountpoint: &str) -> Result<Vec<FileItem>, String>
             None => String::from("unknown"),
         };
 
-        results.push(FileItem { name, file_type });
+        // Velikost souboru (složka = 0)
+        let size = if metadata.is_file() {
+            metadata.len()
+        } else {
+            0
+        };
+
+        // Čas vytvoření (pokud je dostupný)
+        let created = metadata.created()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs());
+
+        results.push(FileItem { name, file_type, size, created });
     }
 
     Ok(results)

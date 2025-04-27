@@ -6,7 +6,7 @@
     onMount(() => {
         setTimeout(() => {
             //goto('/initial_setup');
-            goto("/dashboard");
+            goto("/dashboard/disk_clone");
         }, 3000);
     });
 </script>
