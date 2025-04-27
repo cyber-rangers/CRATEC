@@ -17,38 +17,11 @@ mod disk_utils;
 mod config;
 mod lockscreen;
 mod history;
-mod app_info;
+mod system_info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize the database without passing a connection
-    // The function now gets its own connection from the pool
     db::initialize_db()?;
-
-    //TEST
-    let device = "/dev/sdc";
-
-    // Test funkce detect_hpa_dco
-    
-    
-
-    /* // Test funkce get_disk_info
-    match disk_utils::get_disk_info(device) {
-        Ok(disk_info) => {
-            println!("Disk Info:");
-            println!("Serial: {}", disk_info.serial);
-            println!("Capacity (bytes): {}", disk_info.capacity_bytes);
-            println!("Partitions: {:?}", disk_info.partitions);
-            println!("ATA Encryption: {:?}", disk_info.ata_encryption);
-            println!("HPA: {}", disk_info.has_hpa);
-            println!("DCO: {}", disk_info.dco);
-        }
-        Err(e) => {
-            println!("Failed to get disk info: {}", e);
-        }
-    }
-    // Konec TEST */
-
 
     Builder::default()
         .plugin(tauri_plugin_websocket::init())
@@ -76,6 +49,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             history::get_history,
             history::get_config_entry,
             history::get_process_log_lines_texts,
+            system_info::get_program_versions,
+            system_info::get_system_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
