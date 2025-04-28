@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Modal } from '@skeletonlabs/skeleton-svelte';
-	import { LockKeyhole, Power, RefreshCw, X } from 'lucide-svelte';
+	import { LockKeyhole, Power,  FileCog, X } from 'lucide-svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import LockScreenDrawer from '$lib/components/modals/LockScreenDrawer.svelte';
 	import SystemLogModal from '$lib/components/modals/SystemLogModal.svelte';
@@ -126,7 +126,7 @@
 				style="background-color: var(--color-surface-700)"
 				on:click={openSystemLog}
 			>
-				<RefreshCw class="h-6 w-6" />
+				<FileCog class="h-6 w-6" />
 				<span class="mt-2 text-sm">System Log</span>
 			</button>
 		</div>

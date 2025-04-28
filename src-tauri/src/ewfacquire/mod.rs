@@ -240,7 +240,7 @@ pub async fn run_ewfacquire(
                          WHERE id = ?1 AND active = 1",
                     )
                     .map_err(|e| {
-                        log_error(&format!("(DB) Chyba při přípravě SQL dotazu: {}", e)); // LOG
+                        log_error(&format!("(DB) Chyba při přípravě SQL dotazu: {}", e));
                         format!("(DB) Chyba při přípravě SQL dotazu: {}", e)
                     })?;
 
