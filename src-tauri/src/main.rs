@@ -18,12 +18,12 @@ mod config;
 mod lockscreen;
 mod history;
 mod system_info;
-
+mod integrity_check;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     db::initialize_db()?;
-
+ 
     Builder::default()
         .plugin(tauri_plugin_websocket::init())
         .plugin(shell_init())
@@ -52,6 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             history::get_process_log_lines_texts,
             system_info::get_program_versions,
             system_info::get_system_logs,
+            integrity_check::run_aide_check_json,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

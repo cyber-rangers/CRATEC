@@ -46,3 +46,4 @@ printpdf = { version = "0.8.2", features = ["html"] }
 serialport = "4.7.1"
 tera = "1.20.0"
 tectonic = {version = "0.15.0", features = ["external-harfbuzz"] }
+uuid = { version = "1.16.0", features = ["v4"] }
