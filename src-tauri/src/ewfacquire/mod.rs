@@ -267,7 +267,7 @@ pub async fn run_ewfacquire(
                     })
                 })
                 .map_err(|e| {
-                    log_error(&format!("(DB) Chyba při získávání konfigurace: {}", e)); // LOG
+                    log_error(&format!("(DB) Chyba při získávání konfigurace: {}", e));
                     format!("(DB) Chyba při získávání konfigurace: {}", e)
                 })?
             };
@@ -315,7 +315,7 @@ pub async fn run_ewfacquire(
                             "(DB) Nepodařilo se najít second_output disk v tabulce interfaces: {}",
                             second_stripped
                         );
-                        log_error(&msg); // LOG
+                        log_error(&msg); 
                         msg
                     })?,
                 )
@@ -528,7 +528,6 @@ pub async fn run_ewfacquire(
             .to_string();
 
         if !hash_types.is_empty() {
-            // Add the hash types as parameter if not empty
             push_pair(&mut args_exec, &mut args_print, "-d", &hash_types);
         }
     }
@@ -589,7 +588,6 @@ pub async fn run_ewfacquire(
         );
     }
 
-    // Zbytek původních argumentů - beze změny
     args_exec.push("-u".to_string());
     args_print.push("-u".to_string());
     args_exec.push("-v".to_string());

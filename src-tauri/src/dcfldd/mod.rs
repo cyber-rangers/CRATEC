@@ -529,7 +529,7 @@ pub async fn run_dcfldd(
                 let line_str = String::from_utf8_lossy(&line).to_string();
                 let trimmed = line_str.trim(); // Odstraní bílé znaky na začátku a na konci
 
-                // Odesíláme zprávu ProcessOutput s původním (nebo trimovaným) řetězcem
+                // Odesílání zprávu ProcessOutput 
                 let output_msg = WsProcessOutput {
                     msg_type: "ProcessOutput".to_string(),
                     id: process_id,
@@ -549,13 +549,12 @@ pub async fn run_dcfldd(
                     ).map_err(|e| format!("(DB output) Error writing log: {}", e))?;
                 }
 
-                // Použijeme trimovanou verzi výsledku pro regulární výrazy
                 lazy_static! {
                     static ref PROGRESS_REGEX: Regex = Regex::new(r"(\d+)% done, .*").unwrap();
                     static ref BLOCKS_REGEX: Regex = Regex::new(r"^(\d+)\ blocks\s+\((\d+)Mb\)\ written\.?$").unwrap();
                 }
 
-                // Extrakce procentuálního postupu pomocí trimované verze
+                // Extrakce procentuálního postupu
                 if let Some(caps) = PROGRESS_REGEX.captures(trimmed) {
                     if let Ok(perc) = caps[1].parse::<u8>() {
                         let update = WsProcessProgress {
@@ -636,7 +635,6 @@ pub async fn run_dcfldd(
                 let end_time = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
                 let end_time_for_db = end_time.clone();
 
-                // Cesta k hash.log
                 let hash_log_path = format!("{}/hash.log", evidence_dir_1);
 
                 // Načti hashe z hash.log

@@ -305,7 +305,6 @@
 					? $copyRunStore.ewfParams[field as keyof EwfParams]
 					: $copyRunStore.ddParams[field as keyof DdParams];
 
-			// Povolené znaky: písmena, čísla, _ a -
 			if (typeof valueToCheck === 'string' && !/^[A-Za-z0-9_-]*$/.test(valueToCheck)) {
 				invalidField = field;
 			}

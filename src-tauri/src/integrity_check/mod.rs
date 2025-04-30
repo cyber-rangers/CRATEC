@@ -6,7 +6,6 @@ use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-/// Struktura odpovídající klíčům v JSON reportu AIDE
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AideReport {
     #[serde(rename = "number_of_entries")]
@@ -30,7 +29,6 @@ pub struct Counts {
     pub changed: Option<u64>,
 }
 
-/// Shrnutí, které vracíme Tauri front-endu
 #[derive(Debug, Serialize)]
 pub struct AideSummary {
     pub anything_changed: bool,
