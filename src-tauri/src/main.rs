@@ -7,7 +7,6 @@ mod db;
 mod disk_manager;
 mod ewfacquire;
 mod dcfldd;
-mod initial_setup;
 mod logger;
 mod power_actions;
 mod websocket;
@@ -28,10 +27,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .plugin(tauri_plugin_websocket::init())
         .plugin(shell_init())
         .invoke_handler(tauri::generate_handler![
-            initial_setup::find_file,
-            initial_setup::fetch_integrity_data,
-            initial_setup::verify_compatibility,
-            initial_setup::check_integrity,
             dashboard_layout::get_device_status,
             websocket::start_websocket_server,
             copy_configs::save_new_ewf_config,

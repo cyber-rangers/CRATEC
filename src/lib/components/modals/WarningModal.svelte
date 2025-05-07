@@ -65,7 +65,7 @@
         {#if !warningData.readable}
             <!-- ČERVENÉ VAROVÁNÍ: Disk je uzamčen -->
             <div class="flex flex-col items-center h-full justify-center">
-                <OctagonAlert size={160} color="black" class="mb-4" />
+                <OctagonAlert size={80} color="black" class="mb-4" />
                 <h1 class="mb-2 text-center text-3xl font-bold text-black">Disk je uzamčen!</h1>
                 <p class="mb-4 max-w-xl text-center text-base text-black font-semibold">
                     Disk je uzamčen na úrovni hardwaru nebo firmware a nelze z něj číst žádná data.
@@ -114,7 +114,7 @@
         {:else if showHpa}
             <!-- ŽLUTÉ VAROVÁNÍ: HPA -->
             <div class="flex flex-col items-center h-full justify-center">
-                <TriangleAlert size={200} color="black" class="mb-4" />
+                <TriangleAlert size={140} color="black" class="mb-4" />
                 <h1 class="mb-2 text-center text-3xl font-bold text-black">HPA byl detekován!</h1>
                 <p class="mb-8 max-w-xl text-center text-base text-black text-xl">
                     Byla detekována přítomnost HPA (Host Protected Area).<br>
