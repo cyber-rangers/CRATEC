@@ -5,6 +5,9 @@ use std::process::{Command, Stdio};
 use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;
+use tauri::AppHandle;
+use tauri_plugin_shell::ShellExt;
+use tauri_plugin_shell::process::CommandEvent;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AideReport {
@@ -40,7 +43,7 @@ pub struct AideSummary {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn run_aide_check_json() -> Result<AideSummary, String> {
+pub async fn run_aide_check_json(app_handle: AppHandle) -> Result<AideSummary, String> {
     let aide_cmd = [
         "-A",
         "report_format=json",
@@ -49,15 +52,31 @@ pub fn run_aide_check_json() -> Result<AideSummary, String> {
         "--check",
     ];
 
-    let output = Command::new("sudo")
-        .arg("aide")
+    let shell = app_handle.shell();
+    let (mut rx, _child) = shell
+        .command("sudo")
+        .args(["aide"])
         .args(&aide_cmd)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
+        .spawn()
         .map_err(|e| format!("Cannot execute aide: {}", e))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            CommandEvent::Stdout(line) => {
+                stdout.push_str(&String::from_utf8_lossy(&line));
+            }
+            CommandEvent::Stderr(line) => {
+                stderr.push_str(&String::from_utf8_lossy(&line));
+            }
+            CommandEvent::Terminated(_exit) => {
+                break;
+            }
+            _ => {}
+        }
+    }
 
     // Najdi první a poslední složenou závorku a vyřízni JSON blok
     let json_start = stdout.find('{');
@@ -122,6 +141,6 @@ pub fn run_aide_check_json() -> Result<AideSummary, String> {
         removed,
         changed,
         status_message,
-        raw_json: json_str.to_string(), // přidáno
+        raw_json: json_str.to_string(),
     })
 }

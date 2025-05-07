@@ -478,48 +478,45 @@ pub fn generate_report_ewfacquire(id: i64) -> Result<(), String> {
     ctx.insert("source_partitions", &parts);
     println!("✅  Source partitions – {}", parts.len());
 
-    // 3️⃣  Render
     println!("🚧  Renderuji Tera …");
 
     let latex = match Tera::one_off(TEMPLATE_EN_EWF, &ctx, false) {
         Ok(l) => l,
         Err(err) => {
-            // ➜ 1) vytiskneme celou chybu jako Debug + Display
-            eprintln!("❌  Tera render error: {:#?}", err); // debug
-            eprintln!("└── {}", err); // display
-
-            // ➜ 2) dumpneme celý Context pro offline ladění
-            if let Ok(json) = serde_json::to_string_pretty(&ctx.clone().into_json()) {
-                let _ = fs::write("/home/master/Dokumenty/ctx_dump.json", json);
-                eprintln!("💾  uložen ctx_dump.json");
-            }
-
-            // ➜ 3) rovnou vrátíme String-chybovou hlášku
+            eprintln!("❌  Tera render error: {:#?}", err);
+            eprintln!("└── {}", err);
             return Err(format!("Render selhal: {err}"));
         }
     };
 
-    fs::write("/home/master/Dokumenty/debug_output.tex", &latex).map_err(|e| e.to_string())?;
+    // Unikátní dočasné cesty podle id
+    let tex_path = format!("/tmp/report_{id}.tex");
+    let pdf_path = format!("/tmp/report_{id}.pdf");
 
-    println!("🚀  Tectonic → PDF (external process) …");
+    // Zápis .tex
+    fs::write(&tex_path, &latex).map_err(|e| e.to_string())?;
+
+    // Spuštění tectonic
     let tectonic_status = std::process::Command::new("tectonic")
         .arg("--outdir")
-        .arg("/home/master/Dokumenty")
-        .arg("/home/master/Dokumenty/debug_output.tex")
+        .arg("/tmp")
+        .arg(&tex_path)
         .status()
         .map_err(|e| format!("Failed to run tectonic: {e}"))?;
 
     if !tectonic_status.success() {
+        // Úklid
+        let _ = fs::remove_file(&tex_path);
         return Err(format!(
             "Tectonic failed with exit code: {:?}",
             tectonic_status.code()
         ));
     }
 
-    // Načti PDF z výsledného souboru
-    let pdf = fs::read("/home/master/Dokumenty/debug_output.pdf").map_err(|e| e.to_string())?;
+    // Načtení PDF
+    let pdf = fs::read(&pdf_path).map_err(|e| e.to_string())?;
 
-    // -------- uložení na disky ---------------------------------------------
+    // Uložení na cílové zařízení
     let save_pdf = |key: &str, pdf: &[u8]| -> std::io::Result<()> {
         let disk = report[key].as_object().unwrap_or(&EMPTY_MAP);
         let base = disk
@@ -544,6 +541,9 @@ pub fn generate_report_ewfacquire(id: i64) -> Result<(), String> {
     save_pdf("dest_disk", &pdf)
         .and(save_pdf("second_dest_disk", &pdf))
         .map_err(|e| e.to_string())?;
+
+    let _ = fs::remove_file(&tex_path);
+    let _ = fs::remove_file(&pdf_path);
 
     println!("🏁  generate_report({id}) – DONE");
     Ok(())
@@ -929,41 +929,45 @@ pub fn generate_report_dcfldd(id: i64) -> Result<(), String> {
     }
     ctx.insert("source_partitions", &parts);
 
-    // 3️⃣  Render
     println!("🚧  Renderuji Tera …");
 
-    let latex = match Tera::one_off(TEMPLATE_EN_DD, &ctx, false) {
+    let latex = match Tera::one_off(TEMPLATE_EN_EWF, &ctx, false) {
         Ok(l) => l,
         Err(err) => {
             eprintln!("❌  Tera render error: {:#?}", err);
             eprintln!("└── {}", err);
-            if let Ok(json) = serde_json::to_string_pretty(&ctx.clone().into_json()) {
-                let _ = fs::write("/home/master/Dokumenty/ctx_dump.json", json);
-                eprintln!("💾  uložen ctx_dump.json");
-            }
             return Err(format!("Render selhal: {err}"));
         }
     };
 
-    fs::write("/home/master/Dokumenty/debug_output.tex", &latex).map_err(|e| e.to_string())?;
+    // Unikátní dočasné cesty podle id
+    let tex_path = format!("/tmp/report_{id}.tex");
+    let pdf_path = format!("/tmp/report_{id}.pdf");
 
-    println!("🚀  Tectonic → PDF (external process) …");
+    // Zápis .tex
+    fs::write(&tex_path, &latex).map_err(|e| e.to_string())?;
+
+    // Spuštění tectonic
     let tectonic_status = std::process::Command::new("tectonic")
         .arg("--outdir")
-        .arg("/home/master/Dokumenty")
-        .arg("/home/master/Dokumenty/debug_output.tex")
+        .arg("/tmp")
+        .arg(&tex_path)
         .status()
         .map_err(|e| format!("Failed to run tectonic: {e}"))?;
 
     if !tectonic_status.success() {
+        // Úklid
+        let _ = fs::remove_file(&tex_path);
         return Err(format!(
             "Tectonic failed with exit code: {:?}",
             tectonic_status.code()
         ));
     }
 
-    let pdf = fs::read("/home/master/Dokumenty/debug_output.pdf").map_err(|e| e.to_string())?;
+    // Načtení PDF
+    let pdf = fs::read(&pdf_path).map_err(|e| e.to_string())?;
 
+    // Uložení na cílové zařízení
     let save_pdf = |key: &str, pdf: &[u8]| -> std::io::Result<()> {
         let disk = report[key].as_object().unwrap_or(&EMPTY_MAP);
         let base = disk
@@ -989,7 +993,11 @@ pub fn generate_report_dcfldd(id: i64) -> Result<(), String> {
         .and(save_pdf("second_dest_disk", &pdf))
         .map_err(|e| e.to_string())?;
 
-    println!("🏁  generate_report_dcfldd({id}) – DONE");
+    // Úklid dočasných souborů
+    let _ = fs::remove_file(&tex_path);
+    let _ = fs::remove_file(&pdf_path);
+
+    println!("🏁  generate_report({id}) – DONE");
     Ok(())
 }
 

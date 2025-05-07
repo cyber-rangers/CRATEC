@@ -7,7 +7,9 @@
 	import { createToaster } from '@skeletonlabs/skeleton-svelte';
 	import { Toaster } from '@skeletonlabs/skeleton-svelte';
 
-	export const toaster = createToaster();
+	const toaster = createToaster({
+		placement: 'top'
+	});
 
 	import DDConfigDetailModal from '$lib/components/modals/DDConfigDetailModal.svelte';
 	import EwfConfigDetailModal from '$lib/components/modals/EwfConfigDetailModal.svelte';
