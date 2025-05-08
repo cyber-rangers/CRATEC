@@ -96,16 +96,15 @@
 	];
 
 	const processBufferSizeOptions = [
-		{ label: '512 MiB (536870912)', value: '536870912' },
-		{ label: '1 GiB (1073741824)', value: '1073741824' },
-		{ label: '2 GiB (2147483648)', value: '2147483648' },
-		{ label: '4 GiB (4294967296)', value: '4294967296' },
-		{ label: '6 GiB (6442450944)', value: '6442450944' },
-		{ label: '8 GiB (8589934592)', value: '8589934592' },
-		{ label: '10 GiB (10737418240)', value: '10737418240' },
-		{ label: '12 GiB (12884901888)', value: '12884901888' }
+		{ label: '512 MiB (524288KB)', value: '524288' },
+		{ label: '1 GiB (1048576KB)', value: '1048576' },
+		{ label: '2 GiB (2097152KB)', value: '2097152' },
+		{ label: '4 GiB (4194304KB)', value: '4194304' },
+		{ label: '6 GiB (6291456KB)', value: '6291456' },
+		{ label: '8 GiB (8388608KB)', value: '8388608' },
+		{ label: '10 GiB (10485760KB)', value: '10485760' },
+		{ label: '12 GiB (12582912KB)', value: '12582912' }
 	];
-
 	const bytesPerSectorOptions = [
 		{ label: 'Automaticky detekovat (výchozí)', value: 'auto' },
 		{ label: '128', value: '128' },
@@ -148,7 +147,7 @@
 			case 'offset':
 				return 'Offset v bajtech od začátku disku, odkud začít číst. Výchozí je 0 (čte se od začátku). Změň pouze pro speciální případy.';
 			case 'process_buffer_size':
-				return 'Velikost bufferu procesu (-p). Ovlivňuje rychlost akvizice – čím větší, tím rychlejší (pokud máš dost RAM). Doporučujeme nastavit na několik GB, ale nikdy ne více, než kolik máš volné RAM. Pro systém s 32 GB RAM můžeš použít až 12 GB, pokud běží dva procesy současně.';
+				return 'Velikost bufferu procesu (-p). Ovlivňuje rychlost akvizice – čím větší, tím rychlejší (pokud je dost RAM). Doporučujeme nastavit na několik GB, ale nikdy ne více, než kolik je volné RAM. Pro systém s 32 GB RAM lze použít až 12 GB, pokud běží dva procesy současně.';
 			case 'bytes_per_sector':
 				return 'Počet bajtů na sektor (-P). Toto je fyzická vlastnost disku (typicky 512 nebo 4096). Obvykle ponech "auto" – program detekuje správnou hodnotu sám. Neměň, pokud nevíš přesně proč.';
 			case 'read_retry_count':

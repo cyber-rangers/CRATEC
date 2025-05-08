@@ -1,6 +1,7 @@
 use crate::disk_utils::get_mountpoint_for_interface;
 use crate::led::LED_CONTROLLER;
 use crate::logger::{log_debug, log_error, log_warn};
+use crate::report::generate_report_ewfacquire;
 use crate::websocket;
 use chrono::{Local, Utc};
 use lazy_static::lazy_static;
@@ -11,9 +12,8 @@ use std::fs;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
-use tauri_plugin_shell::ShellExt;
-use crate::report::generate_report_ewfacquire;
 use tauri_plugin_shell::process::CommandEvent;
+use tauri_plugin_shell::ShellExt;
 
 fn execute_with_retry<T, F>(operation_name: &str, mut f: F, max_retries: usize) -> Result<T, String>
 where
@@ -315,7 +315,7 @@ pub async fn run_ewfacquire(
                             "(DB) Nepodařilo se najít second_output disk v tabulce interfaces: {}",
                             second_stripped
                         );
-                        log_error(&msg); 
+                        log_error(&msg);
                         msg
                     })?,
                 )
@@ -419,11 +419,11 @@ pub async fn run_ewfacquire(
 
     fn push_pair(exec: &mut Vec<String>, print: &mut Vec<String>, flag: &str, value: &str) {
         exec.push(flag.to_string());
-        exec.push(value.to_string());
+        exec.push(value.to_string()); // BEZ uvozovek!
         print.push(flag.to_string());
-        print.push(format!("\"{}\"", value));
+        print.push(format!("\"{}\"", value)); // pro logování s uvozovkami
     }
-
+    
     push_pair(&mut args_exec, &mut args_print, "-A", &config.codepage);
     push_pair(
         &mut args_exec,
@@ -467,11 +467,12 @@ pub async fn run_ewfacquire(
         &ewf_params.evidence_number,
     );
     push_pair(&mut args_exec, &mut args_print, "-f", &config.ewf_format);
+    let granularity = config.granularity_sectors.parse::<u32>().unwrap_or(2);
     push_pair(
         &mut args_exec,
         &mut args_print,
         "-g",
-        &config.granularity_sectors,
+        &granularity.to_string(),
     );
 
     push_pair(&mut args_exec, &mut args_print, "-m", "fixed");
@@ -506,13 +507,11 @@ pub async fn run_ewfacquire(
         );
     }
 
-    let retry_count = config.read_retry_count.parse::<i32>().unwrap_or(2);
-
-    args_exec.push("-r".to_string());
-    args_exec.push(retry_count.to_string());
-
-    args_print.push("-r".to_string());
-    args_print.push(retry_count.to_string());
+    let mut retry_count = config.read_retry_count.parse::<u8>().unwrap_or(2);
+    if retry_count < 1 || retry_count > 5 { // uprav rozsah podle ewfacquire
+        retry_count = 2;
+    }
+    push_pair(&mut args_exec, &mut args_print, "-r", &retry_count.to_string());
 
     if config.swap_byte_pairs {
         args_exec.push("-s".to_string());

@@ -1,9 +1,22 @@
 <script lang="ts">
 	import { Modal, Progress } from '@skeletonlabs/skeleton-svelte';
-	import { SquareX, Send, Lock, LockOpen, ChevronUp, LoaderCircle, CircleAlert, CircleCheck } from 'lucide-svelte';
+	import {
+		SquareX,
+		Send,
+		Lock,
+		LockOpen,
+		ChevronUp,
+		LoaderCircle,
+		CircleAlert,
+		CircleCheck,
+		Usb,
+		HardDrive
+	} from 'lucide-svelte';
 	import { Resource, invoke } from '@tauri-apps/api/core';
 	import { Toaster, createToaster } from '@skeletonlabs/skeleton-svelte';
 	import { runningProcessesStore } from '$lib/stores/processStore';
+	import { get } from 'svelte/store';
+	import { deviceStore } from '$lib/stores/deviceStore';
 
 	export let isOpen: boolean = false;
 
@@ -86,6 +99,19 @@
 		}
 		result += seconds + 's';
 		return result;
+	}
+
+	function getDeviceNameByInterfacePath(path: string): string {
+		const devices = [...get(deviceStore).usb_devices, ...get(deviceStore).sata_devices];
+		const iface = path?.split('/')?.pop();
+		const found = devices.find((d) => d.interface === iface);
+		return found?.name || iface || path;
+	}
+
+	function getDeviceNameByMountpoint(mount: string): string {
+		const devices = [...get(deviceStore).usb_devices, ...get(deviceStore).sata_devices];
+		const found = devices.find((d) => d.mountpoint === mount);
+		return found?.name || mount;
 	}
 </script>
 
@@ -179,13 +205,17 @@
 						<div class="top-section bg-surface-600 flex w-full rounded-t-lg px-4 py-2">
 							<div class="w-1/2 text-left">
 								<p class="flex items-center gap-1">
-									<span class="font-semibold">Status:</span> {process.status}
 									{#if process.status === 'running'}
-										<LoaderCircle class="animate-spin ml-1" />
+										Status: běží
+										<LoaderCircle class="animate-spin" />
 									{:else if process.status === 'error'}
-										<CircleAlert class="ml-1" />
+										Status: chyba
+										<CircleAlert />
 									{:else if process.status === 'done'}
-										<CircleCheck class="ml-1" />
+										Status: hotovo
+										<CircleCheck />
+									{:else}
+										{process.status}
 									{/if}
 								</p>
 							</div>
@@ -204,8 +234,20 @@
 							class="middle-section bg-surface-800 flex w-full items-center justify-between px-4 py-2"
 						>
 							<div class="flex items-center gap-2">
-								<span class="bg-surface-800 rounded px-2 py-1 text-xs">IN</span>
-								<span class="text-xs">{process.source_disk.name}</span>
+								{#if getDeviceNameByInterfacePath(typeof process.source_disk === 'string' ? process.source_disk : process.source_disk?.interface || '')
+									.toLowerCase()
+									.includes('usb')}
+									<Usb size={18} />
+								{:else}
+									<HardDrive size={18} />
+								{/if}
+								<span class="text-xs">
+									{getDeviceNameByInterfacePath(
+										typeof process.source_disk === 'string'
+											? process.source_disk
+											: process.source_disk?.interface || ''
+									)}
+								</span>
 							</div>
 							<div class="bg-surface-800 flex w-1/3 items-center justify-center rounded p-1">
 								<div class="arrow">
@@ -217,8 +259,18 @@
 							<div class="flex flex-col gap-1">
 								{#each process.destination_disks as disk}
 									<div class="flex items-center gap-2">
-										<span class="bg-surface-800 rounded px-2 py-1 text-xs">OUT</span>
-										<span class="text-xs">{disk.interface}</span>
+										{#if getDeviceNameByMountpoint(typeof disk === 'string' ? disk : disk?.mountpoint || '')
+											.toLowerCase()
+											.includes('usb')}
+											<Usb size={18} />
+										{:else}
+											<HardDrive size={18} />
+										{/if}
+										<span class="text-xs">
+											{getDeviceNameByMountpoint(
+												typeof disk === 'string' ? disk : disk?.mountpoint || ''
+											)}
+										</span>
 									</div>
 								{/each}
 							</div>

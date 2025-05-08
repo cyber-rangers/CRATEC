@@ -110,13 +110,17 @@
 						<div class="w-1/3 text-center">
 							<div class="flex items-center justify-center gap-2">
 								<p class="flex items-center gap-1">
-									Status: {process.status}
 									{#if process.status === 'running'}
+										Status: běží
 										<LoaderCircle class="animate-spin" />
 									{:else if process.status === 'error'}
+										Status: chyba
 										<CircleAlert />
 									{:else if process.status === 'done'}
+										Status: hotovo
 										<CircleCheck />
+									{:else}
+										{process.status}
 									{/if}
 								</p>
 							</div>
@@ -152,14 +156,14 @@
 								{:else}
 									<HardDrive size={25} />
 								{/if}
+								<span class="text-sm">
+									{getDeviceNameByInterfacePath(
+										typeof process.source_disk === 'string'
+											? process.source_disk
+											: process.source_disk?.interface || ''
+									)}
+								</span>
 							</div>
-							<p class="text-sm">
-								{getDeviceNameByInterfacePath(
-									typeof process.source_disk === 'string'
-										? process.source_disk
-										: process.source_disk?.interface || ''
-								)}
-							</p>
 						</div>
 
 						<!-- Arrow (prostřední sloupec) -->

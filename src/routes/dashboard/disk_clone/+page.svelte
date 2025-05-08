@@ -624,12 +624,14 @@
 								type="text"
 								class="input border-primary-500 mx-auto block w-[400px] border-2 text-center"
 								bind:value={$copyRunStore.ewfParams.notes}
+								on:focus={() => openKeyboard('notes')}
 							/>
 						{:else}
 							<input
 								type="text"
 								class="input border-primary-500 mx-auto block w-[400px] border-2 text-center"
 								bind:value={$copyRunStore.ddParams.notes}
+								on:focus={() => openKeyboard('notes')}
 							/>
 						{/if}
 
