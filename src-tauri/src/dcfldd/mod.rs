@@ -29,12 +29,6 @@ pub struct DdParams {
     pub limit: i64,
 }
 
-/// Jednoduchá konfigurace dcfldd, analogicky k EwfConfig.
-#[derive(Debug)]
-struct DcflddConfig {
-    pub confname: String,
-    // Další pole dle potřeby...
-}
 
 /// Struktura pro frontendu zasílané výstupy.
 #[derive(Serialize)]
@@ -405,20 +399,9 @@ pub async fn run_dcfldd(
         push_key_val(&mut args_exec, &mut args_print, "of2", &second_out);
     }
 
-    // Block size (format from config)
-    let block_size = if config.format != "auto" {
-        config.format.parse::<u64>().unwrap_or(512)
-    } else {
-        match get_block_size(&actual_input_device) {
-            Ok(size) => size,
-            Err(e) => {
-                log_warn(&format!("Could not auto-detect block size, defaulting to 512: {}", e));
-                512
-            }
-        }
-    };
-
-    push_key_val(&mut args_exec, &mut args_print, "bs", &block_size.to_string());
+    let block_size: u64 = config.format.trim().parse().unwrap_or(512);
+    // BS Block size
+    push_key_val(&mut args_exec, &mut args_print, "bs", &config.format);
 
     // Offset handling (skip parameter)
     let offset_value = if config.offset == "ask" {
@@ -487,7 +470,7 @@ pub async fn run_dcfldd(
 
     // Status output for progress tracking
     push_key_val(&mut args_exec, &mut args_print, "status", "on");
-    push_key_val(&mut args_exec, &mut args_print, "statusinterval", "150000");
+    push_key_val(&mut args_exec, &mut args_print, "statusinterval", "100");
 
     // Create error log
     let error_log_path = format!("{}/error.log", evidence_dir_1);

@@ -7,8 +7,7 @@ pub fn initialize_dd_config_scheme(conn: &Connection) -> Result<()> {
             created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             active BOOLEAN NOT NULL DEFAULT true,
             confname TEXT NOT NULL,
-            format TEXT NOT NULL DEFAULT 'auto'
-                CHECK(format IN ('auto','512','1024','2048')),
+            format TEXT NOT NULL DEFAULT '512',
             limit_mode TEXT NOT NULL DEFAULT 'whole'
                 CHECK(limit_mode IN ('whole','ask')),
             offset TEXT NOT NULL DEFAULT '0',

@@ -931,7 +931,7 @@ pub fn generate_report_dcfldd(id: i64) -> Result<(), String> {
 
     println!("🚧  Renderuji Tera …");
 
-    let latex = match Tera::one_off(TEMPLATE_EN_EWF, &ctx, false) {
+    let latex = match Tera::one_off(TEMPLATE_EN_DD, &ctx, false) {
         Ok(l) => l,
         Err(err) => {
             eprintln!("❌  Tera render error: {:#?}", err);
