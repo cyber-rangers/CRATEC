@@ -102,8 +102,8 @@ body, .page-wrapper {
             <thead>
                 <tr>
                     <th>Status</th>
-                    <th>End Time</th>
-                    <th>Start Time</th>
+                    <th>Spuštění akvizice</th>
+                    <th>Ukončení akvizice</th>
                 </tr>
             </thead>
             <tbody class="[&>tr]:hover:preset-tonal-primary">
