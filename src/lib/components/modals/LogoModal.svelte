@@ -13,6 +13,7 @@
 	let ewfacquireVersion = '';
 	let dcflddVersion = '';
 	let buildDate = '';
+	let systemId = '';
 
 	// Funkce pro formátování ISO data na "14:00 17.10.2000"
 	function formatBuildDate(dateStr: string): string {
@@ -31,10 +32,12 @@
 				ewfacquire: string;
 				dcfldd: string;
 				build_date: string;
+				short_hw_id: string;
 			}>('get_program_versions');
 			ewfacquireVersion = versions.ewfacquire;
 			dcflddVersion = versions.dcfldd;
 			buildDate = versions.build_date;
+			systemId = versions.short_hw_id;
 		} catch (e) {
 			console.error('Chyba při získávání verzí programů:', e);
 		}
@@ -93,6 +96,7 @@
 				<p><b>Autor:</b> <code class="code">Martin Sladký</code></p>
 				<p><b>Verze aplikace:</b> <code class="code">{appVersion}</code></p>
 				<p><b>Čas sestavení:</b> <code class="code">{formatBuildDate(buildDate)}</code></p>
+				<p><b>System ID:</b> <code class="code">{systemId}</code></p>
 			</div>
 			<div class="text-right">
 				<p><b>ewfacquire:</b> <code class="code">{ewfacquireVersion.replace(/^ewfacquire\s*/i, '').trim()}</code></p>

@@ -1,7 +1,7 @@
 //! Modul pro tvorbu PDF reportu (s detailními debug-výpisy)
 
 use crate::{db::DB_POOL, disk_utils};
-
+use crate::system_info::get_report_system_info;
 use chrono::{Local, NaiveDateTime, TimeZone, Utc}; // přidej Utc
 use once_cell::sync::Lazy;
 use rusqlite::{Row, Statement};
@@ -126,9 +126,11 @@ pub fn generate_report_ewfacquire(id: i64) -> Result<(), String> {
     let now = Local::now();
     ctx.insert("date", &now.format("%b %d, %Y").to_string());
     ctx.insert("time_local", &now.format("%H:%M:%S (%Z)").to_string());
-    ctx.insert("software_hash", "75f1c14d734ea09147330fae210faa54");
-    ctx.insert("build_date", "Jul 08, 2024 13:38:46 PDT");
-    ctx.insert("serial_number", "117495");
+
+    let sysinfo = get_report_system_info().map_err(|e| format!("system info: {e}"))?;
+    ctx.insert("software_hash", &sysinfo.cratec_hash);
+    ctx.insert("build_date", &sysinfo.build_date);
+    ctx.insert("serial_number", &sysinfo.short_hw_id);
 
     let cfg = report["config_record"].as_object().unwrap();
     let proc = report["copy_process"].as_object().unwrap();
@@ -597,9 +599,12 @@ pub fn generate_report_dcfldd(id: i64) -> Result<(), String> {
     let now = Local::now();
     ctx.insert("date", &now.format("%b %d, %Y").to_string());
     ctx.insert("time_local", &now.format("%H:%M:%S (%Z)").to_string());
-    ctx.insert("software_hash", "75f1c14d734ea09147330fae210faa54");
-    ctx.insert("build_date", "Jul 08, 2024 13:38:46 PDT");
-    ctx.insert("serial_number", "117495");
+    
+    
+    let sysinfo = get_report_system_info().map_err(|e| format!("system info: {e}"))?;
+    ctx.insert("software_hash", &sysinfo.cratec_hash);
+    ctx.insert("build_date", &sysinfo.build_date);
+    ctx.insert("serial_number", &sysinfo.short_hw_id);
 
     let cfg = report["config_record"].as_object().unwrap();
     let proc = report["copy_process"].as_object().unwrap();

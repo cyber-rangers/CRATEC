@@ -47,6 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             history::get_process_log_lines_texts,
             system_info::get_program_versions,
             system_info::get_system_logs,
+            system_info::get_short_hw_id,
             integrity_check::run_aide_check_json,
         ])
         .run(tauri::generate_context!())

@@ -47,3 +47,6 @@ serialport = "4.7.1"
 tera = "1.20.0"
 tectonic = {version = "0.15.0", features = ["external-harfbuzz"] }
 uuid = { version = "1.16.0", features = ["v4"] }
+radix_fmt = "1.0.0"
+hex = "0.4.3"
+md5 = "0.7.0"
