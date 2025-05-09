@@ -1,5 +1,5 @@
 use crate::db::DB_CONN;
-use crate::disk_utils::{get_mountpoint_for_interface, get_total_blocks, get_block_size};  // Přidáno
+use crate::disk_utils::{get_block_size, get_mountpoint_for_interface, get_total_blocks}; // Přidáno
 use crate::led::LED_CONTROLLER;
 use crate::logger::{log_debug, log_error, log_warn};
 use crate::report::generate_report_dcfldd;
@@ -13,9 +13,8 @@ use std::fs;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
-use tauri_plugin_shell::ShellExt;
-
 use tauri_plugin_shell::process::CommandEvent;
+use tauri_plugin_shell::ShellExt;
 
 /// Parametry pro dcfldd (obdoba EwfParams).
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -28,7 +27,6 @@ pub struct DdParams {
     pub offset: i64,
     pub limit: i64,
 }
-
 
 /// Struktura pro frontendu zasílané výstupy.
 #[derive(Serialize)]
@@ -110,7 +108,11 @@ fn strip_dev_prefix(full_path: &str) -> String {
 }
 
 // Pomocná funkce pro vytvoření složky case_number/evidence_number na cílovém disku
-fn prepare_evidence_dir(base: &str, case_number: &str, evidence_number: &str) -> Result<String, String> {
+fn prepare_evidence_dir(
+    base: &str,
+    case_number: &str,
+    evidence_number: &str,
+) -> Result<String, String> {
     let case_dir = Path::new(base).join(case_number);
     let evidence_dir = case_dir.join(evidence_number);
 
@@ -118,7 +120,8 @@ fn prepare_evidence_dir(base: &str, case_number: &str, evidence_number: &str) ->
         fs::create_dir(&case_dir).map_err(|e| format!("Failed to create case dir: {}", e))?;
     }
     if !evidence_dir.exists() {
-        fs::create_dir(&evidence_dir).map_err(|e| format!("Failed to create evidence dir: {}", e))?;
+        fs::create_dir(&evidence_dir)
+            .map_err(|e| format!("Failed to create evidence dir: {}", e))?;
     }
     Ok(evidence_dir.to_string_lossy().to_string())
 }
@@ -136,7 +139,10 @@ pub async fn run_dcfldd(
 
     // Připravíme stripped cesty pro DB lookup
     let input_raw = strip_dev_prefix(&input_interface);
-    let output_raws: Vec<String> = output_interfaces.iter().map(|p| strip_dev_prefix(p)).collect();
+    let output_raws: Vec<String> = output_interfaces
+        .iter()
+        .map(|p| strip_dev_prefix(p))
+        .collect();
 
     // Vstupní zařízení
     let actual_input_device = format!("/dev/disk/by-path/{}", input_interface);
@@ -150,10 +156,7 @@ pub async fn run_dcfldd(
     let actual_output_mount = match get_mountpoint_for_interface(&first_output) {
         Some(m) => m,
         None => {
-            let err = format!(
-                "(run_dcfldd) Nelze najít mountpoint pro {}",
-                first_output
-            );
+            let err = format!("(run_dcfldd) Nelze najít mountpoint pro {}", first_output);
             log_error(&err);
             return Err(err);
         }
@@ -165,10 +168,7 @@ pub async fn run_dcfldd(
         match get_mountpoint_for_interface(&second_output) {
             Some(m) => Some(m),
             None => {
-                let err = format!(
-                    "(run_dcfldd) Nelze najít mountpoint pro {}",
-                    second_output
-                );
+                let err = format!("(run_dcfldd) Nelze najít mountpoint pro {}", second_output);
                 log_error(&err);
                 return Err(err);
             }
@@ -275,10 +275,12 @@ pub async fn run_dcfldd(
                         // explicitně načteme i64
                         |row| row.get::<_, i64>(0),
                     )
-                    .map_err(|_| format!(
-                        "(DB) Nepodařilo se najít second_output disk v tabulce interfaces: {}",
-                        output_raws[1]
-                    ))?,
+                    .map_err(|_| {
+                        format!(
+                            "(DB) Nepodařilo se najít second_output disk v tabulce interfaces: {}",
+                            output_raws[1]
+                        )
+                    })?,
                 )
             } else {
                 None
@@ -307,7 +309,7 @@ pub async fn run_dcfldd(
                     dd_params_db.limit,
                     source_disk_id,
                     first_output_id,
-                    second_output_id  
+                    second_output_id
                 ],
             )
             .map_err(|e| format!("(DB) Chyba při insertu copy_log_dd: {}", e))?;
@@ -400,7 +402,7 @@ pub async fn run_dcfldd(
     }
 
     let block_size: u64 = config.format.trim().parse().unwrap_or(512);
-    // BS Block size
+
     push_key_val(&mut args_exec, &mut args_print, "bs", &config.format);
 
     // Offset handling (skip parameter)
@@ -455,8 +457,6 @@ pub async fn run_dcfldd(
         }
     }
 
-    
-
     // Verify input option
     if config.vf {
         // This would need verification file path logic
@@ -482,14 +482,21 @@ pub async fn run_dcfldd(
     println!("{}", cmd_print);
     println!("================================\n");
 
-    let total_blocks = match get_total_blocks(&actual_input_device) {
+    // Fyzická velikost sektoru na disku (většinou 512 B nebo 4096 B)
+    let phys_bs: u64 = get_block_size(&actual_input_device).unwrap_or(512);
+
+    // Celkový počet fyzických bloků (lsblk)
+    let total_blocks_raw = match get_total_blocks(&actual_input_device) {
         Ok(tb) => tb,
         Err(e) => {
             log_warn(&format!("Cannot get total blocks, using fallback: {}", e));
-            5_000_000 // fallback if lsblk fails
+            5_000_000
         }
     };
-    println!("Test: Total blocks calculated: {}", total_blocks);
+
+    // Přepočítáme je na bloky o velikosti current `bs`
+    let total_blocks = (total_blocks_raw * phys_bs) / block_size;
+    println!("Celkem bloků podle bs={}: {}", block_size, total_blocks);
 
     // Execute the command
     let shell = app_handle.shell();
@@ -505,6 +512,10 @@ pub async fn run_dcfldd(
     let mut sha1_hash: Option<String> = None;
     let mut sha256_hash: Option<String> = None;
 
+    static mut WINDOW_START_BLOCKS: u64 = 0;
+    static mut WINDOW_START_TIME: Option<std::time::Instant> = None;
+    static mut LAST_SPEED_MIB: f64 = 0.0;
+
     // Process command output
     while let Some(event) = rx.recv().await {
         match event {
@@ -512,7 +523,7 @@ pub async fn run_dcfldd(
                 let line_str = String::from_utf8_lossy(&line).to_string();
                 let trimmed = line_str.trim(); // Odstraní bílé znaky na začátku a na konci
 
-                // Odesílání zprávu ProcessOutput 
+                // Odesílání zprávu ProcessOutput
                 let output_msg = WsProcessOutput {
                     msg_type: "ProcessOutput".to_string(),
                     id: process_id,
@@ -534,7 +545,8 @@ pub async fn run_dcfldd(
 
                 lazy_static! {
                     static ref PROGRESS_REGEX: Regex = Regex::new(r"(\d+)% done, .*").unwrap();
-                    static ref BLOCKS_REGEX: Regex = Regex::new(r"^(\d+)\ blocks\s+\((\d+)Mb\)\ written\.?$").unwrap();
+                    static ref BLOCKS_REGEX: Regex =
+                        Regex::new(r"^(\d+)\ blocks\s+\((\d+)Mb\)\ written\.?$").unwrap();
                 }
 
                 // Extrakce procentuálního postupu
@@ -552,45 +564,44 @@ pub async fn run_dcfldd(
                     }
                 }
 
-                // Zpracování progresního výstupu pomocí trimované verze
+                // --- bloky → rychlost & ETA ------------------------------------
                 if let Some(caps) = BLOCKS_REGEX.captures(trimmed) {
                     let blocks_written: u64 = caps[1].parse().unwrap_or(0);
-                    let perc_complete = if total_blocks > 0 {
-                        (blocks_written as f64 / total_blocks as f64) * 100.0
-                    } else {
-                        0.0
-                    };
 
-                    // Výpočet rychlosti v MiB/s
-                    static mut LAST_BLOCKS: u64 = 0;
-                    static mut LAST_TIME: Option<std::time::Instant> = None;
                     let speed_estimate = unsafe {
                         let now = std::time::Instant::now();
-                        let spd = if let Some(prev_time) = LAST_TIME {
-                            let elapsed = now.duration_since(prev_time).as_secs_f64();
-                            if elapsed > 0.0 {
-                                (blocks_written.saturating_sub(LAST_BLOCKS) as f64 * block_size as f64)
-                                    / (elapsed * 1024.0 * 1024.0)
-                            } else {
-                                0.0
-                            }
+
+                        if WINDOW_START_TIME.is_none() {
+                            WINDOW_START_TIME = Some(now);
+                            WINDOW_START_BLOCKS = blocks_written;
+                        }
+
+                        let elapsed = now.duration_since(WINDOW_START_TIME.unwrap()).as_secs_f64();
+
+                        if elapsed >= 2.0 {
+                            let diff_blocks = blocks_written.saturating_sub(WINDOW_START_BLOCKS);
+                            let spd = (diff_blocks as f64 * block_size as f64)
+                                / (elapsed * 1024.0 * 1024.0); // MiB/s
+
+                            WINDOW_START_TIME = Some(now); // reset
+                            WINDOW_START_BLOCKS = blocks_written;
+                            LAST_SPEED_MIB = spd;
+                            spd
                         } else {
-                            0.0
-                        };
-                        LAST_BLOCKS = blocks_written;
-                        LAST_TIME = Some(now);
-                        spd
+                            LAST_SPEED_MIB // drž poslední
+                        }
                     };
 
-                    // Výpočet ETA (zbývající čas) v sekundách
-                    let remaining_bytes = if blocks_written < total_blocks {
-                        (total_blocks - blocks_written) as f64 * block_size as f64
+                    let remaining_blocks = total_blocks.saturating_sub(blocks_written);
+                    let eta_seconds = if speed_estimate > 0.0 {
+                        (remaining_blocks as f64 * block_size as f64)
+                            / (speed_estimate * 1024.0 * 1024.0)
                     } else {
                         0.0
                     };
-                    let remaining_mib = remaining_bytes / (1024.0 * 1024.0);
-                    let eta_seconds = if speed_estimate > 0.0 {
-                        remaining_mib / speed_estimate
+
+                    let perc_complete = if total_blocks > 0 {
+                        (blocks_written as f64 / total_blocks as f64) * 100.0
                     } else {
                         0.0
                     };
@@ -599,11 +610,11 @@ pub async fn run_dcfldd(
                         msg_type: "ProcessProgress".to_string(),
                         id: process_id,
                         progress_perc: Some(perc_complete as u8),
-                        progress_time: Some(eta_seconds as u64), // zbývající čas v sekundách
-                        speed: Some(speed_estimate), // rychlost v MiB/s
+                        progress_time: Some(eta_seconds as u64),
+                        speed: Some(speed_estimate),
                     };
-                    let json = serde_json::to_string(&progress_update).unwrap();
-                    websocket::broadcast_message(&json).await;
+                    websocket::broadcast_message(&serde_json::to_string(&progress_update).unwrap())
+                        .await;
                 }
             }
             CommandEvent::Terminated(exit_code) => {
@@ -621,7 +632,15 @@ pub async fn run_dcfldd(
                 let hash_log_path = format!("{}/hash.log", evidence_dir_1);
 
                 // Načti hashe z hash.log
-                fn parse_hashes_from_log(path: &str) -> std::io::Result<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> {
+                fn parse_hashes_from_log(
+                    path: &str,
+                ) -> std::io::Result<(
+                    Option<String>,
+                    Option<String>,
+                    Option<String>,
+                    Option<String>,
+                    Option<String>,
+                )> {
                     let content = std::fs::read_to_string(path)?;
                     let mut md5 = None;
                     let mut sha1 = None;

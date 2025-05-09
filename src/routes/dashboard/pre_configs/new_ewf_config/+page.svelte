@@ -49,6 +49,7 @@
 	};
 
 	let confnamePopover = false;
+	let ewfFormatPopover = false;
 	let codepagePopover = false;
 	let sectorsPerReadPopover = false;
 	let bytesToReadPopover = false;
@@ -65,6 +66,24 @@
 	let segmentSizePopover = false;
 	let zeroOnReadErrorPopover = false;
 	let useChunkDataPopover = false;
+
+	const codepageOptions = [
+		{ label: 'ascii (výchozí)', value: 'ascii' },
+		{ label: 'windows-874', value: 'windows-874' },
+		{ label: 'windows-932', value: 'windows-932' },
+		{ label: 'windows-936', value: 'windows-936' },
+		{ label: 'windows-949', value: 'windows-949' },
+		{ label: 'windows-950', value: 'windows-950' },
+		{ label: 'windows-1250', value: 'windows-1250' },
+		{ label: 'windows-1251', value: 'windows-1251' },
+		{ label: 'windows-1252', value: 'windows-1252' },
+		{ label: 'windows-1253', value: 'windows-1253' },
+		{ label: 'windows-1254', value: 'windows-1254' },
+		{ label: 'windows-1255', value: 'windows-1255' },
+		{ label: 'windows-1256', value: 'windows-1256' },
+		{ label: 'windows-1257', value: 'windows-1257' },
+		{ label: 'windows-1258', value: 'windows-1258' }
+	];
 
 	const sectorsPerReadOptions = [
 		{ label: '16', value: '16' },
@@ -96,15 +115,17 @@
 	];
 
 	const processBufferSizeOptions = [
-		{ label: '512 MiB (524288KB)', value: '524288' },
-		{ label: '1 GiB (1048576KB)', value: '1048576' },
-		{ label: '2 GiB (2097152KB)', value: '2097152' },
-		{ label: '4 GiB (4194304KB)', value: '4194304' },
-		{ label: '6 GiB (6291456KB)', value: '6291456' },
-		{ label: '8 GiB (8388608KB)', value: '8388608' },
-		{ label: '10 GiB (10485760KB)', value: '10485760' },
-		{ label: '12 GiB (12582912KB)', value: '12582912' }
+		{ label: '256KiB(262144B)', value: '262144' },
+		{ label: '512KiB(524288B)', value: '524288' },
+		{ label: '1MiB(1048576B)', value: '1048576' },
+		{ label: '2MiB(2097152B)', value: '2097152' },
+		{ label: '4MiB(4194304B)', value: '4194304' },
+		{ label: '8MiB(8388608B)', value: '8388608' },
+		{ label: '16MiB(16777216B)', value: '16777216' },
+		{ label: '32MiB(33554432B)–maximum', value: '33554432' },
+		{ label: '36MiB(37748736B)–překročílimit', value: '37748736' }
 	];
+
 	const bytesPerSectorOptions = [
 		{ label: 'Automaticky detekovat (výchozí)', value: 'auto' },
 		{ label: '128', value: '128' },
@@ -115,6 +136,21 @@
 		{ label: '4096', value: '4096' },
 		{ label: '8192', value: '8192' },
 		{ label: '16384', value: '16384' }
+	];
+
+	const ewfFormatOptions = [
+		{ label: 'EWF', value: 'ewf' },
+		{ label: 'SMART', value: 'smart' },
+		{ label: 'FTK', value: 'ftk' },
+		{ label: 'EnCase 1', value: 'encase1' },
+		{ label: 'EnCase 2', value: 'encase2' },
+		{ label: 'EnCase 3', value: 'encase3' },
+		{ label: 'EnCase 4', value: 'encase4' },
+		{ label: 'EnCase 5', value: 'encase5' },
+		{ label: 'EnCase 6', value: 'encase6' },
+		{ label: 'LiNE n5', value: 'linen5' },
+		{ label: 'LiNE n6', value: 'linen6' },
+		{ label: 'EWFx', value: 'ewfx' }
 	];
 
 	const notesOptions = [
@@ -184,6 +220,7 @@
 
 	function popoverClose() {
 		confnamePopover = false;
+		ewfFormatPopover = false;
 		codepagePopover = false;
 		sectorsPerReadPopover = false;
 		bytesToReadPopover = false;
@@ -252,6 +289,43 @@
 			/>
 		</label>
 
+		<!-- Formát EWF -->
+		<label class="label">
+			<div class="flex items-center gap-2">
+				<span>Výstupní formát (-f)</span>
+				<Popover
+					open={ewfFormatPopover}
+					onOpenChange={(e) => (ewfFormatPopover = e.open)}
+					triggerBase="btn-icon preset-tonal"
+					contentBase="card bg-surface-200-800 p-4 space-y-4 max-w-[320px]"
+					arrow
+					arrowBackground="!bg-surface-200 dark:!bg-surface-800"
+					zIndex="999"
+				>
+					{#snippet trigger()}
+						<Info />
+					{/snippet}
+					{#snippet content()}
+						<div class="mb-2 flex items-center justify-between">
+							<h2 class="text-lg font-bold">Info</h2>
+							<button class="btn-icon" on:click={() => (ewfFormatPopover = false)}>
+								<X />
+							</button>
+						</div>
+						{getExplanation('ewf_format')}
+					{/snippet}
+				</Popover>
+			</div>
+			<Combobox
+				multiple={false}
+				data={ewfFormatOptions}
+				defaultValue={[formData.ewf_format]}
+				value={[formData.ewf_format]}
+				onValueChange={(e) => (formData.ewf_format = e.value[0])}
+				placeholder="Vyberte..."
+			/>
+		</label>
+
 		<!-- Kódová stránka -->
 		<label class="label">
 			<div class="flex items-center gap-2">
@@ -279,23 +353,14 @@
 					{/snippet}
 				</Popover>
 			</div>
-			<select class="select" name="codepage" bind:value={formData.codepage}>
-				<option value="ascii">ascii (výchozí)</option>
-				<option value="windows-874">windows-874</option>
-				<option value="windows-932">windows-932</option>
-				<option value="windows-936">windows-936</option>
-				<option value="windows-949">windows-949</option>
-				<option value="windows-950">windows-950</option>
-				<option value="windows-1250">windows-1250</option>
-				<option value="windows-1251">windows-1251</option>
-				<option value="windows-1252">windows-1252</option>
-				<option value="windows-1253">windows-1253</option>
-				<option value="windows-1254">windows-1254</option>
-				<option value="windows-1255">windows-1255</option>
-				<option value="windows-1256">windows-1256</option>
-				<option value="windows-1257">windows-1257</option>
-				<option value="windows-1258">windows-1258</option>
-			</select>
+			<Combobox
+				multiple={false}
+				data={codepageOptions}
+				defaultValue={[formData.codepage]}
+				value={[formData.codepage]}
+				onValueChange={(e) => (formData.codepage = e.value[0])}
+				placeholder="Vyberte..."
+			/>
 		</label>
 
 		<!-- Počet sektorů na čtení -->
