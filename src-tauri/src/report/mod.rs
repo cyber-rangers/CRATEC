@@ -1,7 +1,8 @@
 //! Modul pro tvorbu PDF reportu (s detailními debug-výpisy)
 
-use crate::{db::DB_POOL, disk_utils};
+use crate::logger::{log_debug, log_error};
 use crate::system_info::get_report_system_info;
+use crate::{db::DB_POOL, disk_utils};
 use chrono::{Local, NaiveDateTime, TimeZone, Utc}; // přidej Utc
 use once_cell::sync::Lazy;
 use rusqlite::{Row, Statement};
@@ -516,38 +517,83 @@ pub fn generate_report_ewfacquire(id: i64) -> Result<(), String> {
     }
 
     // Načtení PDF
-    let pdf = fs::read(&pdf_path).map_err(|e| e.to_string())?;
+    log_debug(&format!("Načítám PDF soubor z cesty: {}", pdf_path));
+    let pdf = fs::read(&pdf_path).map_err(|e| {
+        log_error(&format!("Chyba při načítání PDF souboru: {e}"));
+        e.to_string()
+    })?;
 
     // Uložení na cílové zařízení
-    let save_pdf = |key: &str, pdf: &[u8]| -> std::io::Result<()> {
+    log_debug("Ukládám PDF na cílové zařízení...");
+    let save_pdf = |key: &str, pdf_path: &str| -> std::io::Result<()> {
+        log_debug(&format!("Zpracovávám klíč: {key}"));
         let disk = report[key].as_object().unwrap_or(&EMPTY_MAP);
-        let base = disk
+
+        // Najdi oddíl s platným mountpointem (string a není prázdný)
+        let mount_opt = disk
             .get("partitions")
             .and_then(Value::as_array)
-            .and_then(|a| a.iter().find(|p| p.get("mountpoint").is_some()))
-            .and_then(|p| p.get("mountpoint").and_then(Value::as_str))
-            .map(|mp| {
-                format!(
-                    "{mp}/{}/{}/",
-                    gs(&log_map, "case_number"),
-                    gs(&log_map, "evidence_number")
-                )
+            .and_then(|parts| {
+                parts.iter().find_map(|p| {
+                    p.get("mountpoint")
+                        .and_then(Value::as_str)
+                        .filter(|s| !s.is_empty())
+                })
             });
-        if let Some(mut dir) = base {
-            fs::create_dir_all(&dir)?;
-            dir.push_str("audit-report.pdf");
-            fs::write(dir, pdf)?;
+
+        if let Some(mp) = mount_opt {
+            // Sestav konečnou cestu
+            let target_dir = format!(
+                "{mp}/{}/{}/",
+                gs(&log_map, "case_number"),
+                gs(&log_map, "evidence_number")
+            );
+            let target_path = format!("{target_dir}audit-report.pdf");
+            log_debug(&format!("Cílová cesta sestavena: {target_path}"));
+
+            // Vytvoř adresář, pokud ještě neexistuje
+            std::process::Command::new("sudo")
+                .arg("mkdir")
+                .arg("-p")
+                .arg(&target_dir)
+                .status()?;
+
+            // Kopíruj soubor pod rootem
+            let status = std::process::Command::new("sudo")
+                .arg("cp")
+                .arg(pdf_path)
+                .arg(&target_path)
+                .status()?;
+            if !status.success() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("sudo cp failed with status {:?}", status.code()),
+                ));
+            }
+            log_debug(&format!("PDF úspěšně přesunuto na {target_path}"));
+        } else {
+            log_error("Cílová cesta nebyla nalezena (žádný mountpoint).");
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Cílová cesta nebyla nalezena.",
+            ));
         }
         Ok(())
     };
-    save_pdf("dest_disk", &pdf)
-        .and(save_pdf("second_dest_disk", &pdf))
-        .map_err(|e| e.to_string())?;
 
+    save_pdf("dest_disk", &pdf_path)
+        .and(save_pdf("second_dest_disk", &pdf_path))
+        .map_err(|e| {
+            log_error(&format!("Chyba při ukládání PDF na cílové zařízení: {e}"));
+            e.to_string()
+        })?;
+
+    log_debug(&format!("Mažu dočasný soubor: {tex_path}"));
     let _ = fs::remove_file(&tex_path);
+    log_debug(&format!("Mažu dočasný soubor: {pdf_path}"));
     let _ = fs::remove_file(&pdf_path);
 
-    println!("🏁  generate_report({id}) – DONE");
+    log_debug(&format!("generate_report({id}) – HOTOVO"));
     Ok(())
 }
 
@@ -599,8 +645,7 @@ pub fn generate_report_dcfldd(id: i64) -> Result<(), String> {
     let now = Local::now();
     ctx.insert("date", &now.format("%b %d, %Y").to_string());
     ctx.insert("time_local", &now.format("%H:%M:%S (%Z)").to_string());
-    
-    
+
     let sysinfo = get_report_system_info().map_err(|e| format!("system info: {e}"))?;
     ctx.insert("software_hash", &sysinfo.cratec_hash);
     ctx.insert("build_date", &sysinfo.build_date);
@@ -934,13 +979,11 @@ pub fn generate_report_dcfldd(id: i64) -> Result<(), String> {
     }
     ctx.insert("source_partitions", &parts);
 
-    println!("🚧  Renderuji Tera …");
-
+    log_debug("Renderuji Tera šablonu...");
     let latex = match Tera::one_off(TEMPLATE_EN_DD, &ctx, false) {
         Ok(l) => l,
         Err(err) => {
-            eprintln!("❌  Tera render error: {:#?}", err);
-            eprintln!("└── {}", err);
+            log_error(&format!("Tera render error: {:#?}", err));
             return Err(format!("Render selhal: {err}"));
         }
     };
@@ -949,60 +992,111 @@ pub fn generate_report_dcfldd(id: i64) -> Result<(), String> {
     let tex_path = format!("/tmp/report_{id}.tex");
     let pdf_path = format!("/tmp/report_{id}.pdf");
 
-    // Zápis .tex
-    fs::write(&tex_path, &latex).map_err(|e| e.to_string())?;
+    log_debug(&format!("Zapisuje se .tex soubor na cestu: {tex_path}"));
+    fs::write(&tex_path, &latex).map_err(|e| {
+        log_error(&format!("Chyba při zápisu .tex souboru: {e}"));
+        e.to_string()
+    })?;
 
-    // Spuštění tectonic
+    log_debug("Spouštím tectonic pro generování PDF...");
     let tectonic_status = std::process::Command::new("tectonic")
         .arg("--outdir")
         .arg("/tmp")
         .arg(&tex_path)
         .status()
-        .map_err(|e| format!("Failed to run tectonic: {e}"))?;
+        .map_err(|e| {
+            log_error(&format!("Chyba při spuštění tectonic: {e}"));
+            format!("Failed to run tectonic: {e}")
+        })?;
 
     if !tectonic_status.success() {
+        log_error(&format!(
+            "Tectonic selhal s kódem: {:?}",
+            tectonic_status.code()
+        ));
         // Úklid
-        let _ = fs::remove_file(&tex_path);
+        // let _ = fs::remove_file(&tex_path);
         return Err(format!(
             "Tectonic failed with exit code: {:?}",
             tectonic_status.code()
         ));
     }
 
-    // Načtení PDF
-    let pdf = fs::read(&pdf_path).map_err(|e| e.to_string())?;
+    log_debug(&format!("Načítám PDF soubor z cesty: {pdf_path}"));
+    let pdf = fs::read(&pdf_path).map_err(|e| {
+        log_error(&format!("Chyba při načítání PDF souboru: {e}"));
+        e.to_string()
+    })?;
 
-    // Uložení na cílové zařízení
-    let save_pdf = |key: &str, pdf: &[u8]| -> std::io::Result<()> {
+    log_debug("Ukládám PDF na cílové zařízení...");
+    let save_pdf = |key: &str, pdf_path: &str| -> std::io::Result<()> {
         let disk = report[key].as_object().unwrap_or(&EMPTY_MAP);
-        let base = disk
+
+        // Najdi oddíl s platným mountpointem (string a není prázdný)
+        let mount_opt = disk
             .get("partitions")
             .and_then(Value::as_array)
-            .and_then(|a| a.iter().find(|p| p.get("mountpoint").is_some()))
-            .and_then(|p| p.get("mountpoint").and_then(Value::as_str))
-            .map(|mp| {
-                format!(
-                    "{mp}/{}/{}/",
-                    gs(&log_map, "case_number"),
-                    gs(&log_map, "evidence_number")
-                )
+            .and_then(|parts| {
+                parts.iter().find_map(|p| {
+                    p.get("mountpoint")
+                        .and_then(Value::as_str)
+                        .filter(|s| !s.is_empty())
+                })
             });
-        if let Some(mut dir) = base {
-            fs::create_dir_all(&dir)?;
-            dir.push_str("audit-report.pdf");
-            fs::write(dir, pdf)?;
+
+        if let Some(mp) = mount_opt {
+            // Sestav konečnou cestu
+            let target_dir = format!(
+                "{mp}/{}/{}/",
+                gs(&log_map, "case_number"),
+                gs(&log_map, "evidence_number")
+            );
+            let target_path = format!("{target_dir}audit-report.pdf");
+            log_debug(&format!("Cílová cesta sestavena: {target_path}"));
+
+            // Vytvoř adresář, pokud ještě neexistuje
+            std::process::Command::new("sudo")
+                .arg("mkdir")
+                .arg("-p")
+                .arg(&target_dir)
+                .status()?;
+
+            // Kopíruj soubor pod rootem
+            let status = std::process::Command::new("sudo")
+                .arg("cp")
+                .arg(pdf_path)
+                .arg(&target_path)
+                .status()?;
+            if !status.success() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("sudo cp failed with status {:?}", status.code()),
+                ));
+            }
+            log_debug(&format!("PDF úspěšně přesunuto na {target_path}"));
+        } else {
+            log_error("Cílová cesta nebyla nalezena (žádný mountpoint).");
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Cílová cesta nebyla nalezena.",
+            ));
         }
         Ok(())
     };
-    save_pdf("dest_disk", &pdf)
-        .and(save_pdf("second_dest_disk", &pdf))
-        .map_err(|e| e.to_string())?;
 
-    // Úklid dočasných souborů
+    save_pdf("dest_disk", &pdf_path)
+        .and(save_pdf("second_dest_disk", &pdf_path))
+        .map_err(|e| {
+            log_error(&format!("Chyba při ukládání PDF na cílové zařízení: {e}"));
+            e.to_string()
+        })?;
+
+    log_debug(&format!("Mažu dočasný soubor: {tex_path}"));
     let _ = fs::remove_file(&tex_path);
+    log_debug(&format!("Mažu dočasný soubor: {pdf_path}"));
     let _ = fs::remove_file(&pdf_path);
 
-    println!("🏁  generate_report({id}) – DONE");
+    log_debug(&format!("generate_report({id}) – HOTOVO"));
     Ok(())
 }
 

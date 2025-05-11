@@ -236,7 +236,7 @@ fn auto_mount(device: &str) -> Option<String> {
     let output = Command::new("sudo")
         .arg("mount")
         .arg("-o")
-        .arg("rw")
+        .arg("rw,uid=cratec,gid=cratec")
         .arg(&device_to_mount)
         .arg(&mountpoint)
         .output();
