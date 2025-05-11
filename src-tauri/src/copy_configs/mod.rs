@@ -1,4 +1,5 @@
 use rusqlite::{Connection, Result, ToSql};
+use crate::config::DATABASE_PATH;
 
 /// **Struktura pro vkládání nového záznamu (bez ID) pro EWF konfiguraci**
 #[derive(Debug, serde::Serialize)]
@@ -96,7 +97,6 @@ pub fn save_ewf_config(conn: &Connection, config: NewConfig) -> Result<()> {
     Ok(())
 }
 
-/// **Asynchronní funkce pro uložení nové EWF konfigurace**
 #[tauri::command(rename_all = "snake_case")]
 pub async fn save_new_ewf_config(
     confname: String,
@@ -118,11 +118,6 @@ pub async fn save_new_ewf_config(
     zero_on_read_error: bool,
     use_chunk_data: bool,
 ) -> Result<(), String> {
-    let conn = Connection::open("/var/lib/cratec/database.db")
-        .map_err(|e| format!("Error opening DB: {}", e))?;
-    
-    let hash_types_str = hash_types.join(",");
-
     let config = NewConfig {
         confname,
         codepage,
@@ -130,7 +125,7 @@ pub async fn save_new_ewf_config(
         bytes_to_read,
         compression_method,
         compression_level,
-        hash_types: hash_types_str,
+        hash_types: hash_types.join(","),
         ewf_format,
         granularity_sectors,
         notes,
@@ -144,167 +139,132 @@ pub async fn save_new_ewf_config(
         use_chunk_data,
     };
 
-    tauri::async_runtime::spawn_blocking(move || {
-        save_ewf_config(&conn, config)
-    })
-    .await
-    .map_err(|e| format!("Async error: {}", e))?
-    .map_err(|e| format!("Error saving config: {}", e))?;
+    let db_conn = crate::db::DB_CONN.clone();
+
+    // Použijeme asynchronní zámek
+    let conn = db_conn.lock().await;
+
+    // Spustíme synchronní operaci v rámci asynchronního kontextu
+    save_ewf_config(&conn, config)
+        .map_err(|e| format!("Error saving config: {}", e))?;
 
     Ok(())
 }
 
-
-/// **Struktura pro vkládání nové DCFLDD konfigurace (bez ID)**
+/// **Upravená struktura pro vkládání nové DCFLDD konfigurace**
 #[derive(Debug, serde::Serialize)]
 pub struct NewDDConfig {
     pub confname: String,
-    pub bs: i32,
-    pub count: String,
-    pub ibs: i32,
-    pub obs: i32,
-    pub seek: i32,
-    pub skip: i32,
+    pub format: String,
+    pub limit_mode: String,
+    pub offset: String, // TEXT místo i32
     pub hash_types: String,
-    pub hashwindow: i32,
-    pub hashlog: String,
-    pub status: String,
-    pub statusinterval: i32,
+    pub hashwindow: String,
     pub split: String,
-    pub splitformat: String,
-    pub vf: String,
-    pub verifylog: String,
+    pub vf: i32,
+    pub diffwr: i32,
+    pub notes: String,
 }
 
 /// **Synchronní funkce pro uložení DCFLDD konfigurace do databáze**
 pub fn save_dd_config(conn: &Connection, config: NewDDConfig) -> Result<()> {
     let params: Vec<&dyn ToSql> = vec![
         &config.confname,
-        &config.bs,
-        &config.count,
-        &config.ibs,
-        &config.obs,
-        &config.seek,
-        &config.skip,
+        &config.format,
+        &config.limit_mode,
+        &config.offset,
         &config.hash_types,
         &config.hashwindow,
-        &config.hashlog,
-        &config.status,
-        &config.statusinterval,
         &config.split,
-        &config.splitformat,
         &config.vf,
-        &config.verifylog,
+        &config.diffwr,
+        &config.notes,
     ];
     conn.execute(
         r#"INSERT INTO dd_config (
             confname,
-            bs,
-            count,
-            ibs,
-            obs,
-            seek,
-            skip,
+            format,
+            limit_mode,
+            offset,
             hash_types,
             hashwindow,
-            hashlog,
-            status,
-            statusinterval,
             split,
-            splitformat,
             vf,
-            verifylog
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)"#,
+            diffwr,
+            notes
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"#,
         params.as_slice(),
     )?;
     Ok(())
 }
 
-/// **Asynchroní Tauri command pro uložení nové DCFLDD konfigurace**
+/// **Asynchronní Tauri command pro uložení nové DCFLDD konfigurace**
 #[tauri::command(rename_all = "snake_case")]
 pub async fn save_new_dd_config(
     confname: String,
-    bs: String,
-    count: String,
-    ibs: String,
-    obs: String,
-    seek: String,
-    skip: String,
+    format: String,
+    limit_mode: String,
+    offset: String, // akceptuje i "ask"
     hash_types: Vec<String>,
-    hashwindow: String,
-    hashlog: String,
-    status: String,
-    statusinterval: String,
-    split: String,
-    splitformat: String,
+    hashwindow_value: String,
+    hashwindow_unit: String,
+    split_value: String,
+    split_unit: String,
     vf: String,
-    verifylog: String,
+    diffwr: String,
+    notes: String,
 ) -> Result<(), String> {
-    let conn = Connection::open("/var/lib/cratec/database.db")
-        .map_err(|e| format!("Chyba při otevírání DB: {}", e))?;
-    
-    let bs_parsed = bs.parse::<i32>().map_err(|e| format!("Neplatná hodnota bs: {}", e))?;
-    let ibs_parsed = ibs.parse::<i32>().map_err(|e| format!("Neplatná hodnota ibs: {}", e))?;
-    let obs_parsed = obs.parse::<i32>().map_err(|e| format!("Neplatná hodnota obs: {}", e))?;
-    let seek_parsed = seek.parse::<i32>().map_err(|e| format!("Neplatná hodnota seek: {}", e))?;
-    let skip_parsed = skip.parse::<i32>().map_err(|e| format!("Neplatná hodnota skip: {}", e))?;
-    let hashwindow_parsed = hashwindow.parse::<i32>().map_err(|e| format!("Neplatná hodnota hashwindow: {}", e))?;
-    let statusinterval_parsed = statusinterval.parse::<i32>().map_err(|e| format!("Neplatná hodnota statusinterval: {}", e))?;
+    let vf_parsed = if vf == "on" { 1 } else { 0 };
+    let diffwr_parsed = if diffwr == "on" { 1 } else { 0 };
 
-    let hash_types_str = hash_types.join(",");
+    let hashwindow = if hashwindow_value.to_lowercase() == "whole" {
+        "whole".to_string()
+    } else {
+        format!("{}{}", hashwindow_value, hashwindow_unit)
+    };
+
+    let split = if split_value.to_lowercase() == "whole" {
+        "whole".to_string()
+    } else {
+        format!("{}{}", split_value, split_unit)
+    };
 
     let config = NewDDConfig {
         confname,
-        bs: bs_parsed,
-        count,
-        ibs: ibs_parsed,
-        obs: obs_parsed,
-        seek: seek_parsed,
-        skip: skip_parsed,
-        hash_types: hash_types_str,
-        hashwindow: hashwindow_parsed,
-        hashlog,
-        status,
-        statusinterval: statusinterval_parsed,
+        format,
+        limit_mode,
+        offset, // uloží se jako TEXT
+        hash_types: hash_types.join(","),
+        hashwindow,
         split,
-        splitformat,
-        vf,
-        verifylog,
+        vf: vf_parsed,
+        diffwr: diffwr_parsed,
+        notes,
     };
 
-    tauri::async_runtime::spawn_blocking(move || {
-        save_dd_config(&conn, config)
-    })
-    .await
-    .map_err(|e| format!("Asynchroní chyba: {}", e))?
-    .map_err(|e| format!("Chyba při ukládání konfigurace: {}", e))?;
-
+    let db_conn = crate::db::DB_CONN.clone();
+    let conn = db_conn.lock().await;
+    save_dd_config(&conn, config)
+        .map_err(|e| format!("Error saving config: {e}"))?;
     Ok(())
 }
 
-
-/// **Struktura pro načítání DD konfigurace z databáze (s ID)**
+/// **Upravená struktura pro načítání DD konfigurace z databáze (s ID)**
 #[derive(Debug, serde::Serialize)]
 pub struct StoredDDConfig {
     pub id: i32,
     pub created: String,
     pub active: bool,
     pub confname: String,
-    pub bs: i32,
-    pub count: String,
-    pub ibs: i32,
-    pub obs: i32,
-    pub seek: i32,
-    pub skip: i32,
+    pub format: String,
+    pub limit_mode: String,
+    pub offset: String, // místo seek/skip
     pub hash_types: String,
-    pub hashwindow: i32,
-    pub hashlog: String,
-    pub status: String,
-    pub statusinterval: i32,
+    pub hashwindow: String,
     pub split: String,
-    pub splitformat: String,
-    pub vf: String,
-    pub verifylog: String,
+    pub vf: bool,
+    pub diffwr: bool,
+    pub notes: String,
 }
 
 /// **Struktura pro vrácení kombinovaných konfigurací**
@@ -314,7 +274,7 @@ pub struct CombinedConfigs {
     pub dd: Vec<StoredDDConfig>,
 }
 
-/// **Načtení všech aktivních konfigurací (active = true) pro EWF a DD**
+/// Načtení všech aktivních konfigurací pro EWF a DD
 pub fn get_all_configs(conn: &Connection) -> Result<CombinedConfigs> {
     let mut stmt_ewf = conn.prepare(
         r#"SELECT 
@@ -339,10 +299,10 @@ pub fn get_all_configs(conn: &Connection) -> Result<CombinedConfigs> {
             use_chunk_data,
             created
          FROM ewf_config
-         WHERE active = true"#
+         WHERE active = true"#,
     )?;
     let ewf_iter = stmt_ewf.query_map([], |row| {
-         Ok(StoredEWFConfig {
+        Ok(StoredEWFConfig {
             id: row.get(0)?,
             confname: row.get(1)?,
             codepage: row.get(2)?,
@@ -362,12 +322,12 @@ pub fn get_all_configs(conn: &Connection) -> Result<CombinedConfigs> {
             segment_size: row.get(16)?,
             zero_on_read_error: row.get(17)?,
             use_chunk_data: row.get(18)?,
-            created: row.get(19)?
-         })
+            created: row.get(19)?,
+        })
     })?;
     let mut ewf_configs = Vec::new();
     for config in ewf_iter {
-         ewf_configs.push(config?);
+        ewf_configs.push(config?);
     }
 
     let mut stmt_dd = conn.prepare(
@@ -376,50 +336,38 @@ pub fn get_all_configs(conn: &Connection) -> Result<CombinedConfigs> {
             created,
             active,
             confname,
-            bs,
-            count,
-            ibs,
-            obs,
-            seek,
-            skip,
+            format,
+            limit_mode,
+            offset,
             hash_types,
             hashwindow,
-            hashlog,
-            status,
-            statusinterval,
             split,
-            splitformat,
             vf,
-            verifylog
+            diffwr,
+            notes
          FROM dd_config
-         WHERE active = true"#
+         WHERE active = true"#, // odstraněno seek, skip
     )?;
     let dd_iter = stmt_dd.query_map([], |row| {
-         Ok(StoredDDConfig {
+        Ok(StoredDDConfig {
             id: row.get(0)?,
             created: row.get(1)?,
             active: row.get(2)?,
             confname: row.get(3)?,
-            bs: row.get(4)?,
-            count: row.get(5)?,
-            ibs: row.get(6)?,
-            obs: row.get(7)?,
-            seek: row.get(8)?,
-            skip: row.get(9)?,
-            hash_types: row.get(10)?,
-            hashwindow: row.get(11)?,
-            hashlog: row.get(12)?,
-            status: row.get(13)?,
-            statusinterval: row.get(14)?,
-            split: row.get(15)?,
-            splitformat: row.get(16)?,
-            vf: row.get(17)?,
-            verifylog: row.get(18)?,
-         })
+            format: row.get(4)?,
+            limit_mode: row.get(5)?,
+            offset: row.get(6)?, // místo seek, skip
+            hash_types: row.get(7)?,
+            hashwindow: row.get(8)?,
+            split: row.get(9)?,
+            vf: row.get(10)?,
+            diffwr: row.get(11)?,
+            notes: row.get(12)?,
+        })
     })?;
     let mut dd_configs = Vec::new();
     for config in dd_iter {
-         dd_configs.push(config?);
+        dd_configs.push(config?);
     }
 
     Ok(CombinedConfigs {
@@ -431,25 +379,22 @@ pub fn get_all_configs(conn: &Connection) -> Result<CombinedConfigs> {
 /// **Asynchronní příkaz pro získání všech aktivních konfigurací**
 #[tauri::command(rename_all = "snake_case")]
 pub async fn get_all_active_configs() -> Result<CombinedConfigs, String> {
-    let conn = Connection::open("/var/lib/cratec/database.db")
+    let conn = Connection::open(DATABASE_PATH)
         .map_err(|e| format!("Error opening DB: {}", e))?;
-    let configs = tauri::async_runtime::spawn_blocking(move || {
-        get_all_configs(&conn)
-    })
-    .await
-    .map_err(|e| format!("Async error: {}", e))?
-    .map_err(|e| format!("Error querying configs: {}", e))?;
+    let configs = tauri::async_runtime::spawn_blocking(move || get_all_configs(&conn))
+        .await
+        .map_err(|e| format!("Async error: {}", e))?
+        .map_err(|e| format!("Error querying configs: {}", e))?;
     Ok(configs)
 }
-
 
 /// **Funkce pro smazání nebo deaktivaci konfigurace podle ID a typu**
 pub fn delete_or_deactivate(conn: &Connection, config_id: i32, config_type: &str) -> Result<()> {
     // Určíme příslušné tabulky na základě typu konfigurace
     let (log_table, config_table) = match config_type {
-         "ewf" => ("copy_log_ewf", "ewf_config"),
-         "dd" => ("copy_log_dd", "dd_config"),
-         _ => return Err(rusqlite::Error::InvalidQuery),
+        "ewf" => ("copy_log_ewf", "ewf_config"),
+        "dd" => ("copy_log_dd", "dd_config"),
+        _ => return Err(rusqlite::Error::InvalidQuery),
     };
 
     // Zjistíme, zda existují záznamy v logovací tabulce
@@ -468,14 +413,17 @@ pub fn delete_or_deactivate(conn: &Connection, config_id: i32, config_type: &str
         conn.execute(&delete_query, [&config_id])?;
         println!("Konfigurace s ID {} byla odstraněna.", config_id);
     }
-    
+
     Ok(())
 }
 
 /// **Asynchroní Tauri command pro smazání nebo deaktivaci konfigurace podle ID a typu**
 #[tauri::command(rename_all = "snake_case")]
-pub async fn delete_or_deactivate_config(config_id: i32, config_type: String) -> Result<(), String> {
-    let conn = Connection::open("/var/lib/cratec/database.db")
+pub async fn delete_or_deactivate_config(
+    config_id: i32,
+    config_type: String,
+) -> Result<(), String> {
+    let conn = Connection::open(DATABASE_PATH)
         .map_err(|e| format!("Chyba při otevírání DB: {}", e))?;
     tauri::async_runtime::spawn_blocking(move || {
         delete_or_deactivate(&conn, config_id, &config_type)

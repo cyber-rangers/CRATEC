@@ -13,11 +13,9 @@
     "windows": [
       {
         "title": "cratec",
-        "height": 540,  
-				"width": 964, 
-				"resizable": false,
+        "fullscreen": true,
 				"decorations": false,
-				"transparent": false
+				"alwaysOnTop": true
       }
     ],
     "security": {

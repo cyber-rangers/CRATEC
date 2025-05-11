@@ -1,117 +1,110 @@
 <script lang="ts">
-	import { Modal } from '@skeletonlabs/skeleton-svelte';
-	import { onMount } from 'svelte';
+    import { Modal } from '@skeletonlabs/skeleton-svelte';
+    import { onMount } from 'svelte';
 
-	export let config: any;
-	export let openState: boolean = false;
+    export let config: any;
+    export let openState: boolean = false;
 
-	function modalClose() {
-		openState = false;
-	}
+    function modalClose() {
+        openState = false;
+    }
 
-	onMount(() => {
-		setTimeout(() => {
-			const modalElement = document.querySelector('.table-wrap');
-			if (modalElement) {
-				modalElement.scrollTop = 0;
-			}
-		}, 10);
-	});
+    onMount(() => {
+        setTimeout(() => {
+            const modalElement = document.querySelector('.table-wrap');
+            if (modalElement) {
+                modalElement.scrollTop = 0;
+            }
+        }, 10);
+    });
 </script>
 
 <Modal
-	open={openState}
+    open={openState}
     onOpenChange={(e) => (openState = e.open)}
     triggerBase="btn preset-tonal"
     contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
     backdropClasses="backdrop-blur-sm"
 >
-	{#snippet content()}
-		<div class="table-wrap">
-			<table class="table caption-bottom">
-				<thead>
-					<tr>
-						<th>Položka</th>
-						<th>Hodnota</th>
-					</tr>
-				</thead>
-				<tbody>
-					<tr>
-						<td><strong>Název</strong></td>
-						<td>{config?.confname || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>BS</strong></td>
-						<td>{config?.bs || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>Počet</strong></td>
-						<td>{config?.count || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>IBS</strong></td>
-						<td>{config?.ibs || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>OBS</strong></td>
-						<td>{config?.obs || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>Seek</strong></td>
-						<td>{config?.seek || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>Skip</strong></td>
-						<td>{config?.skip || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>Hash typy</strong></td>
-						<td>{config?.hash_types || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>Hashwindow</strong></td>
-						<td>{config?.hashwindow || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>Hashlog</strong></td>
-						<td>{config?.hashlog || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>Status</strong></td>
-						<td>{config?.status || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>Status interval</strong></td>
-						<td>{config?.statusinterval || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>Split</strong></td>
-						<td>{config?.split || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>Split format</strong></td>
-						<td>{config?.splitformat || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>VF</strong></td>
-						<td>{config?.vf || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>Verifylog</strong></td>
-						<td>{config?.verifylog || 'Není k dispozici'}</td>
-					</tr>
-					<tr>
-						<td><strong>ID</strong></td>
-						<td>{config?.id || 'Není k dispozici'}</td>
-					</tr>
-				</tbody>
-			</table>
+    {#snippet content()}
+        <div class="table-wrap">
+            <table class="table caption-bottom">
+                <thead>
+                    <tr>
+                        <th>Položka</th>
+                        <th>Hodnota</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Název</strong></td>
+                        <td>{config?.confname || 'Není k dispozici'}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Vytvořeno</strong></td>
+                        <td>{config?.created || 'Není k dispozici'}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Aktivní</strong></td>
+                        <td>{config?.active ? 'Ano' : 'Ne'}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Formát</strong></td>
+                        <td>{config?.format || 'Není k dispozici'}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Limit mode</strong></td>
+                        <td>{config?.limit_mode || 'Není k dispozici'}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Offset</strong></td>
+                        <td>{config?.offset !== undefined ? config.offset : 'Není k dispozici'}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Hash typy</strong></td>
+                        <td>{config?.hash_types || 'Není k dispozici'}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Hash window</strong></td>
+                        <td>
+                            {#if config?.hashwindow && config.hashwindow.toLowerCase() === 'whole'}
+                                celý disk
+                            {:else}
+                                {config?.hashwindow || 'N/A'}
+                            {/if}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Rozdělení</strong></td>
+                        <td>
+                            {#if config?.split && config.split.toLowerCase() === 'whole'}
+                                celý disk
+                            {:else}
+                                {config?.split || 'N/A'}
+                            {/if}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Diffwr</strong></td>
+                        <td>{config?.diffwr ? 'Zapnuto' : 'Vypnuto'}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Poznámky</strong></td>
+                        <td>{config?.notes || 'Není k dispozici'}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>ID</strong></td>
+                        <td>{config?.id || 'Není k dispozici'}</td>
+                    </tr>
+                   
+                </tbody>
+            </table>
 
-			<div class="modal-footer">
-				<button class="btn preset-filled-primary-500" on:click={modalClose}>Zavřít</button>
-			</div>
-		</div>
-	{/snippet}
+            <div class="modal-footer">
+                <button class="btn preset-filled-primary-500" on:click={modalClose}>Zavřít</button>
+            </div>
+        </div>
+    {/snippet}
 </Modal>
 
 <style lang="postcss">

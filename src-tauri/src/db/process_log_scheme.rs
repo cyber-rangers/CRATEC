@@ -11,8 +11,9 @@ pub fn initialize_process_log_scheme(conn: &Connection) -> Result<()> {
                 CHECK(status IN ('running','done','error')),
             triggered_by_ewf INTEGER,
             triggered_by_dd INTEGER,
-            FOREIGN KEY(triggered_by_ewf) REFERENCES copy_log_ewf(config_id),
-            FOREIGN KEY(triggered_by_dd) REFERENCES copy_log_dd(config_id)
+            FOREIGN KEY(triggered_by_ewf) REFERENCES copy_log_ewf(id),
+            FOREIGN KEY(triggered_by_dd) REFERENCES copy_log_dd(id),
+            CHECK(triggered_by_ewf IS NOT NULL OR triggered_by_dd IS NOT NULL)
         )
         "#,
         [],

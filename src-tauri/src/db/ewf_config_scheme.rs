@@ -22,7 +22,7 @@ pub fn initialize_ewf_config_scheme(conn: &Connection) -> Result<()> {
                 CHECK(compression_level IN ('none','empty-block','fast','best')),
             hash_types TEXT NOT NULL DEFAULT '[]',
             ewf_format TEXT NOT NULL DEFAULT 'encase6'
-                CHECK(ewf_format IN ('ewf','smart','ftk','encase2','encase3','encase4','encase5','encase6','linen5','linen6','ewfx')),
+                CHECK(ewf_format IN ('ewf','smart','ftk','encase1','encase2','encase3','encase4','encase5','encase6','linen5','linen6','ewfx')),
             granularity_sectors TEXT NOT NULL DEFAULT '2',
             notes TEXT NOT NULL DEFAULT '',
             offset TEXT NOT NULL DEFAULT '0'

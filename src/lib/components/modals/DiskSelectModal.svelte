@@ -1,222 +1,245 @@
 <script lang="ts">
 	import { Modal } from '@skeletonlabs/skeleton-svelte';
-	import { deviceStore } from '$lib/stores/deviceStore';
-	import { copyRunStore } from '$lib/stores/copyRunStore';
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
-	import { Usb, HardDrive } from 'lucide-svelte';
-
+	import { Usb, HardDrive, ArrowLeft, ArrowRight } from 'lucide-svelte';
+	import { deviceStore, type DeviceBase } from '$lib/stores/deviceStore';
+	import { copyRunStore } from '$lib/stores/copyRunStore';
+  
+	// Očekáváme, že se modal volá s prop "side" ("input" nebo "output").
+	// Výchozí hodnota nastavíme na "output".
+	export let side: 'input' | 'output' = 'output';
 	export let openState: boolean = false;
-	export let meta;
+  
 
-
-	function modalClose() {
-		openState = false;
-	}
-
-	onMount(() => {
-		setTimeout(() => {
-			const modalElement = document.querySelector('.table-wrap');
-			if (modalElement) {
-				modalElement.scrollTop = 0;
-			}
-		}, 10);
-	});
-
-	let allDisks = [];
-	let index = 0;
-	
-	let selectedDisk = null;
-	let deviceDetails = {};
-
+	// Disková struktura (DeviceBase + pole type)
+	type Disk = DeviceBase & { type: 'usb' | 'sata' };
+  
+	console.log('side:', side);
+  
+	// Reaktivně získáváme disky z deviceStore podle side
 	$: allDisks = [
-		...$deviceStore.usb_devices.map((d) => ({ ...d, type: 'usb' })),
-		...$deviceStore.sata_devices.map((d) => ({ ...d, type: 'sata' }))
+	  ...$deviceStore.usb_devices.filter((d) => d.side === side).map((d): Disk => ({ ...d, type: 'usb' })),
+	  ...$deviceStore.sata_devices.filter((d) => d.side === side).map((d): Disk => ({ ...d, type: 'sata' }))
 	];
 
-	async function fetchDeviceDetails(device) {
-		const command = device.type === 'usb' ? 'get_usb_device_details' : 'get_hdd_details';
-		try {
-			deviceDetails[device.interface] = await invoke(command, {
-				devicePath: device.interface
-			});
-		} catch (error) {
-			console.error('Failed to fetch device details:', error);
-		}
-	}
+	// Pro výstupní disky filtrujeme již zvolené, pro vstup necháváme všechny
+	$: availableDisks = side === 'output'
+		? allDisks.filter((disk) => !$copyRunStore.outputDisks.some((selected) => selected.interface === disk.interface))
+		: allDisks;
 
-	function nextDisk() {
-		if (index < allDisks.length - 1) index++;
-		else index = 0;
-		fetchDeviceDetails(allDisks[index]);
+	console.log('allDisks:', allDisks);
+	$: console.log('deviceStore:', $deviceStore);
+  
+	let carouselContainer: HTMLDivElement;
+	let currentIndex: number = 0;
+	let selectedDisk: Disk | null = null;
+	let deviceDetails: Record<string, any> = {};
+  
+	async function fetchDeviceDetails(device: Disk) {
+	  const command = device.type === 'usb' ? 'get_usb_device_details' : 'get_hdd_details';
+	  try {
+		const details = await invoke(command, { devicePath: device.interface });
+		deviceDetails[device.interface] = details;
+		console.log(`Details for ${device.interface}:`, details);
+	  } catch (error) {
+		console.error('Failed to fetch device details:', error);
+	  }
 	}
-	function prevDisk() {
-		if (index > 0) index--;
-		else index = allDisks.length - 1;
-		fetchDeviceDetails(allDisks[index]);
+  
+	// Posune o jeden disk (250px)
+	function carouselLeft() {
+	  if (!carouselContainer || availableDisks.length === 0) return;
+	  carouselContainer.scrollLeft -= 250;
+	  currentIndex = Math.floor(carouselContainer.scrollLeft / 250);
+	  console.log('Carousel left, currentIndex:', currentIndex);
 	}
-	function selectDisk() {
-		selectedDisk = allDisks[index];
+  
+	function carouselRight() {
+	  if (!carouselContainer || availableDisks.length === 0) return;
+	  carouselContainer.scrollLeft += 250;
+	  currentIndex = Math.floor(carouselContainer.scrollLeft / 250);
+	  console.log('Carousel right, currentIndex:', currentIndex);
 	}
-	function confirmSelection() {
-		if (!selectedDisk) return;
-		const side = meta?.side;
-		if (side === 'input') {
-			copyRunStore.update((state) => ({ ...state, inputDisk: selectedDisk }));
-		} else if (side === 'output') {
-			copyRunStore.update((state) => {
-				const exists = state.outputDisks.some((d) => d.interface === selectedDisk.interface);
-				if (!exists) {
-					return {
-						...state,
-						outputDisks: [...state.outputDisks, selectedDisk]
-					};
-				}
-				return state;
-			});
-		}
-		openState = false;
+  
+	function carouselThumbnail(index: number) {
+	  if (!carouselContainer) return;
+	  carouselContainer.scrollLeft = carouselContainer.clientWidth * index;
+	  currentIndex = index;
+	  console.log('Carousel thumbnail clicked, currentIndex:', currentIndex);
 	}
-
-	onMount(() => {
-		if (allDisks.length > 0) {
-			fetchDeviceDetails(allDisks[0]);
-		}
-	});
-</script>
-
-<Modal
+  
+	function confirmSelection(disk: Disk) {
+	  if (!disk) return;
+	  console.log('Confirming selection for disk:', disk);
+	  if (side === 'input') {
+		copyRunStore.update((state) => ({ ...state, inputDisk: disk }));
+	  } else if (side === 'output') {
+		copyRunStore.update((state) => {
+		  // Přidáme disk jenom pokud není již přidán a pokud je méně než 2 disky zvoleno
+		  if (state.outputDisks.length < 2 && !state.outputDisks.some((d) => d.interface === disk.interface)) {
+			return { ...state, outputDisks: [...state.outputDisks, disk] };
+		  }
+		  return state;
+		});
+	  }
+	  openState = false;
+	}
+  
+	// Převod velikosti disku: počítáme počet bajtů = sector_count * sector_size a převedeme na GB
+	function formatSizeGB(sector_count: number | null, sector_size: number | null): string {
+	  if (!sector_count || !sector_size) return '0 GB';
+	  const bytes = sector_count * sector_size;
+	  return (bytes / (1024 ** 3)).toFixed(2) + ' GB';
+	}
+  </script>
+  
+  <Modal
 	open={openState}
 	onOpenChange={(e) => (openState = e.open)}
 	triggerBase="btn preset-tonal"
-	contentBase="card bg-surface-100-900 p-4 space-y-4 shadow-xl max-w-screen-sm"
+	contentBase="card bg-transparent p-4 space-y-4 max-w-screen-sm"
 	backdropClasses="backdrop-blur-sm"
->
+  >
 	{#snippet content()}
-		{#if allDisks.length > 0}
-			<div class="modal">
-				<div class="modal-body">
-					<button class="nav left" onclick={prevDisk}>&#9664;</button>
-					<div
-						class="carousel"
-						onclick={selectDisk}
-						class:selected={selectedDisk === allDisks[index]}
-					>
-						{#if allDisks[index].type === 'usb'}
-							<div class="connected-icon" style="width: 20%;">
-								<Usb />
-							</div>
-						{:else}
-							<div class="connected-icon" style="width: 20%;">
-								<HardDrive />
-							</div>
-						{/if}
-						<span style="height: 20px;"></span>
-						<span class="span-model"
-							>{deviceDetails[allDisks[index].interface]?.device_model ||
-								deviceDetails[allDisks[index].interface]?.id_model}</span
-						>
-						<span class="span-infoheader">Rozhraní:</span>
-						<span class="span-info">{allDisks[index].interface}</span>
-						<span class="span-infoheader">Seriové číslo:</span>
-						<span class="span-info"
-							>{deviceDetails[allDisks[index].interface]?.serial_number ||
-								deviceDetails[allDisks[index].interface]?.id_serial_short}</span
-						>
-						<span class="span-infoheader">Vendor:</span>
-						<span class="span-info"
-							>{deviceDetails[allDisks[index].interface]?.user_capacity ||
-								deviceDetails[allDisks[index].interface]?.id_vendor}</span
-						>
-						{#if selectedDisk === allDisks[index]}
-							<button class="confirm" onclick={confirmSelection}>Potvrdit</button>
-						{/if}
-					</div>
-					<button class="nav right" onclick={nextDisk}>&#9654;</button>
-				</div>
-			</div>
-		{/if}
+	  <div class="w-full">
+		<!-- Carousel -->
+		<div class="card grid grid-cols-[auto_1fr_auto] items-center gap-4 p-4">
+		  <!-- Button: Left -->
+		  <button
+			type="button"
+			class="btn rounded-full w-12 h-12 preset-filled-primary-500 preset-filled"
+			on:click={carouselLeft}
+			aria-label="Předchozí disk"
+			disabled={availableDisks.length < 2}
+		  >
+			<ArrowLeft size={16} />
+		  </button>
+		  <!-- Carousel Container -->
+		  <div
+			bind:this={carouselContainer}
+			data-carousel
+			class="flex snap-x snap-mandatory overflow-x-auto scroll-smooth w-[250px]"
+		  >
+			{#each availableDisks as disk, i (disk.interface)}
+			  <div
+				class="rounded-container flex w-[250px] h-[200px] bg-surface-900 cursor-pointer snap-center flex-col items-center justify-center border-2 p-2"
+				on:click={() => {
+				  console.log('Selected disk:', disk);
+				  confirmSelection(disk);
+				}}
+			  >
+				{#if disk.type === 'usb'}
+				  <div class="connected-icon" style="width: 40px;">
+					<Usb />
+				  </div>
+				{:else}
+				  <div class="connected-icon" style="width: 40px;">
+					<HardDrive />
+				  </div>
+				{/if}
+				<p class="disk-name">{disk.name || 'Neznámý disk'}</p>
+				<p class="disk-serial">
+				  Sériové číslo:<br />
+				  {disk.serial || 'N/A'}
+				</p>
+				<p class="disk-size">
+				  Velikost:<br />
+				  {formatSizeGB(disk.sector_count, disk.sector_size)}
+				</p>
+			  </div>
+			{/each}
+		  </div>
+		  <!-- Button: Right -->
+		  <button
+			type="button"
+			class="btn rounded-full w-12 h-12 preset-filled-primary-500"
+			on:click={carouselRight}
+			aria-label="Další disk"
+			disabled={availableDisks.length < 2}
+		  >
+			<ArrowRight size={16} />
+		  </button>
+		</div>
+	  </div>
 	{/snippet}
-</Modal>
-
-<style lang="postcss">
-	.modal {
-		background: transparent;
-		padding: 1.5rem;
-		border-radius: 8px;
-		width: 450px;
-		height: 400px;
-		margin: auto;
-		text-align: center;
+  </Modal>
+  
+  <style lang="postcss">
+	[data-carousel] {
+	  scroll-snap-type: x mandatory;
+	  display: flex;
+	  overflow-x: auto;
+	  scroll-behavior: smooth;
+	  -ms-overflow-style: none; /* IE and Edge */
+	  scrollbar-width: none; /* Firefox */
 	}
-	.modal-body {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 1rem;
+	[data-carousel]::-webkit-scrollbar {
+	  display: none; /* Chrome, Safari, Opera */
 	}
-	.carousel {
-		width: 100%;
-		height: 300px;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		background: rgba(var(--color-surface-700) / 1);
-		border-radius: 12px;
-		border: 2px solid #ccc;
-		cursor: pointer;
-		transition: background 0.3s ease;
-		padding: 1rem;
+	.snap-center {
+	  scroll-snap-align: center;
+	  flex-shrink: 0;
 	}
-	.carousel:hover {
-		background: rgba(0, 0, 0, 0.1);
-	}
-	.carousel.selected {
-		background: rgba(0, 0, 0, 0.1);
-	}
-	.icon {
-		width: 40px;
-		height: 40px;
-		margin-bottom: 0.5rem;
+	.confirm-container {
+	  margin-top: 1rem;
+	  text-align: center;
 	}
 	.confirm {
-		margin-top: 0.5rem;
-		padding: 0.5rem 1rem;
-		background: green;
-		color: white;
-		border: none;
-		border-radius: 5px;
-		cursor: pointer;
+	  padding: 0.5rem 1rem;
+	  background: green;
+	  color: white;
+	  border: none;
+	  border-radius: 5px;
+	  cursor: pointer;
 	}
 	.confirm:hover {
-		background: darkgreen;
+	  background: darkgreen;
 	}
-	.nav {
-		background: transparent;
-		border: none;
-		font-size: 40px;
-		cursor: pointer;
-		color: rgba(var(--color-primary-500) / 1);
-		outline: none;
+	.no-disks-info {
+	  color: var(--color-primary-500);
+	  font-weight: bold;
+	  text-align: center;
+	  padding: 2rem;
 	}
-	.nav:focus,
-	.nav:active {
-		outline: none !important;
+	.disk-name {
+	  font-weight: bold;
+	  font-size: 1.25rem;
+	  margin-top: 0.5rem;
 	}
-
-	.span-model {
-		font-weight: 900;
-		font-size: 25px;
+	.disk-serial,
+	.disk-size,
+	.thumb-name {
+	  font-size: 0.9rem;
 	}
-
-	.span-infoheader {
-		padding-top: 10px;
-		font-size: 18px;
+	.disk-serial {
+	  font-size: 0.9rem;
+	  text-align: center;
 	}
-
-	.span-info {
-		font-weight: 700;
-		font-size: 18px;
+	.modal {
+	  background: transparent;
+	  padding: 1.5rem;
+	  border-radius: 8px;
+	  width: 450px;
+	  margin: auto;
+	  text-align: center;
 	}
-</style>
+	.modal-body {
+	  display: flex;
+	  align-items: center;
+	  justify-content: center;
+	  gap: 1rem;
+	}
+	.btn-icon {
+	  border: none;
+	  cursor: pointer;
+	}
+	.thumbnail {
+	  display: flex;
+	  flex-direction: column;
+	  align-items: center;
+	}
+	.thumb-name {
+	  margin-top: 0.25rem;
+	}
+  </style>
