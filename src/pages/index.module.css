@@ -3,11 +3,14 @@
  * and scoped locally.
  */
 
+/* Hero banner s tmavším pozadím */
 .heroBanner {
   padding: 4rem 0;
   text-align: center;
   position: relative;
   overflow: hidden;
+  background-color: #E3E3E3; /* Tmavší pozadí */
+  color: #fff; /* Bílý text pro kontrast */
 }
 
 @media screen and (max-width: 996px) {
@@ -20,4 +23,96 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Kontejner pro Swiper */
+.swiper-outer-container {
+  position: relative;
+  width: 900px;      /* větší než samotný box s obrázkem */
+  margin: 0 auto;
+  overflow: visible; /* umožní šipkám být mimo vnitřní box */
+  padding-bottom: 60px; /* místo pro tečky pod boxem */
+}
+
+.swiper-container {
+  position: relative;
+  max-width: 700px;
+  height: 400px;
+  margin: 0 auto;
+  background-color: #f5f5f5;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+/* Obrázky uvnitř Swiper */
+.swiper-slide img {
+  max-width: 80%; /* Zmenšení obrázků */
+  max-height: 80%; /* Zajištění, že obrázky nepřesáhnou kontejner */
+  object-fit: contain; /* Zachování poměru stran obrázků */
+  border-radius: 10px; /* Zaoblení rohů obrázků */
+}
+
+/* Přepsání Swiper proměnných pro šipky */
+:root {
+  --swiper-navigation-color: #fff; /* Nastavení bílé barvy šipek */
+  --swiper-navigation-size: 50px; /* Velikost šipek */
+  --swiper-pagination-color: #fff; /* Nastavení bílé barvy pro aktivní tečku */
+}
+
+/* Bílé šipky a jejich pozice */
+.swiper-container .swiper-button-next,
+.swiper-container .swiper-button-prev {
+  color: var(--swiper-navigation-color) !important; /* Použití bílé barvy */
+  background-color: transparent !important; /* Odstranění pozadí šipek */
+  border: none !important; /* Odstranění případného rámečku */
+  width: var(--swiper-navigation-size);
+  height: var(--swiper-navigation-size);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+}
+
+.swiper-container .swiper-button-prev {
+  left: -80px !important; /* Posunutí vlevo mimo box */
+}
+
+.swiper-container .swiper-button-next {
+  right: -80px !important; /* Posunutí vpravo mimo box */
+}
+
+/* Tečky (indikátor) posunuté níže */
+.swiper-pagination {
+  bottom: -20px !important; /* Posunutí teček níže */
+}
+
+/* Bílé tečky (indikátor) */
+.swiper-pagination-bullet {
+  background-color: #fff !important; /* Bílé tečky */
+  opacity: 0.7; /* Poloprůhledné tečky */
+}
+
+.swiper-pagination-bullet-active {
+  background-color: #fff !important; /* Aktivní tečka také bílá */
+  opacity: 1 !important; /* Plná neprůhlednost pro aktivní tečku */
+}
+
+/* Posunutí sekce s tlačítkem blíže k obrázkům */
+.footer-section {
+  background-color: #000; /* Černé pozadí */
+  color: #fff; /* Bílý text */
+  padding: 1.5rem 0; /* Menší padding pro zmenšení mezery */
+  text-align: center;
+  margin-top: -20px; /* Posunutí sekce nahoru */
+}
+
+.footer-section .button {
+  background-color: #fff; /* Bílé tlačítko */
+  color: #000; /* Černý text */
+  text-decoration: none;
+  padding: 1rem 2rem;
+  border-radius: 5px;
+  font-size: 1rem;
 }

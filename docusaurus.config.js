@@ -4,7 +4,7 @@ import { themes as prismThemes } from 'prism-react-renderer';
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'CRATEC',
-  tagline: 'Forensic Imaging & Documentation Tool',
+  tagline: 'Nástroj pro forenzní vytváření bitových kopií', // Aktualizovaný tagline
   favicon: 'img/favicon.ico',
 
   // GitHub Pages deployment URL
@@ -34,17 +34,7 @@ const config = {
           sidebarPath: './sidebars.js',
           editUrl: 'https://github.com/cyber-rangers/CRATEC/edit/docs/',
         },
-        blog: {
-          showReadingTime: true,
-          feedOptions: {
-            type: ['rss', 'atom'],
-            xslt: true,
-          },
-          editUrl: 'https://github.com/cyber-rangers/CRATEC/edit/docs/',
-          onInlineTags: 'warn',
-          onInlineAuthors: 'warn',
-          onUntruncatedBlogPosts: 'warn',
-        },
+        blog: false, // Zakázání blogu
         theme: {
           customCss: './src/css/custom.css',
         },
@@ -65,11 +55,10 @@ const config = {
         items: [
           {
             type: 'docSidebar',
-            sidebarId: 'tutorialSidebar',
+            sidebarId: 'tutorialSidebar', // Použijeme hlavní sidebar
             position: 'left',
-            label: 'Documentation',
+            label: 'Dokumentace',
           },
-          { to: '/blog', label: 'Blog', position: 'left' },
           {
             href: 'https://github.com/cyber-rangers/CRATEC',
             label: 'GitHub',
@@ -100,19 +89,11 @@ const config = {
                 label: 'Discord',
                 href: 'https://discordapp.com/invite/docusaurus',
               },
-              {
-                label: 'X',
-                href: 'https://x.com/docusaurus',
-              },
             ],
           },
           {
             title: 'More',
             items: [
-              {
-                label: 'Blog',
-                to: '/blog',
-              },
               {
                 label: 'GitHub',
                 href: 'https://github.com/cyber-rangers/CRATEC',
@@ -120,7 +101,7 @@ const config = {
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} cyber-rangers. Built with Docusaurus.`,
+        copyright: `Copyright © 2025. All rights reserved.`,
       },
       prism: {
         theme: prismThemes.github,
@@ -130,3 +111,5 @@ const config = {
 };
 
 export default config;
+
+
