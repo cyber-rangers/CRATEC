@@ -79,7 +79,7 @@ export default function Home() {
       >
         <Link
           className="button button--secondary button--lg"
-          to="/docs/hardware/prehled"
+          to="/docs/o-zarizeni/prehled"
           style={{
             backgroundColor: '#fff',
             color: '#000',

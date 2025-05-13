@@ -20,13 +20,9 @@ const sidebars = {
       type: 'category',
       label: 'Hardware',
       items: [
-        'hardware/prehled',
-        'hardware/zakladni-deska',
-        'hardware/chlazeni',
+        'hardware/komponenty',
         'hardware/box',
-        'hardware/propojovaci-kabely',
-        'hardware/dotykovy-displej',
-        'hardware/napajeci-zdroj',
+        'hardware/sestaveni',
       ],
     },
     {
@@ -34,8 +30,14 @@ const sidebars = {
       label: 'Instalace',
       items: [
         'instalace/os',
-        'instalace/luks-secureboot',
         'instalace/aplikace',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Vývoj',
+      items: [
+        'vyvoj/lokalni-vyvoj',
       ],
     },
     {
@@ -44,7 +46,6 @@ const sidebars = {
       items: [
         'o-zarizeni/prehled',
         'o-zarizeni/gui',
-        'o-zarizeni/vykonnove-testy',
         'o-zarizeni/nastroje',
       ],
     },
