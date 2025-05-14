@@ -115,29 +115,15 @@
 	];
 
 	const processBufferSizeOptions = [
-		// Menší buffery (vhodné pro poškozená média nebo pomalá zařízení)
-		{ label: '64 KiB (65 536 B)', value: '65536' },
-		{ label: '128 KiB (131 072 B)', value: '131072' },
-		{ label: '256 KiB (262 144 B)', value: '262144' },
-		{ label: '512 KiB (524 288 B)', value: '524288' },
-
-		// Střední buffery (univerzální použití)
-		{ label: '1 MiB (1 048 576 B)', value: '1048576' },
-		{ label: '2 MiB (2 097 152 B)', value: '2097152' },
-		{ label: '4 MiB (4 194 304 B)', value: '4194304' },
-		{ label: '8 MiB (8 388 608 B)', value: '8388608' },
-		{ label: '16 MiB (16 777 216 B)', value: '16777216' },
-
-		// Větší buffery (pro rychlá úložiště a vysokovýkonné systémy)
-		{ label: '32 MiB (33 554 432 B)', value: '33554432' },
-		{ label: '64 MiB (67 108 864 B)', value: '67108864' },
-		{ label: '72 MiB (75 497 472 B)', value: '75497472' }, // Testovací hodnota
-		{ label: '128 MiB (134 217 728 B)', value: '134217728' },
-		{ label: '256 MiB (268 435 456 B)', value: '268435456' },
-		{ label: '512 MiB (536 870 912 B)', value: '536870912' },
-
-		// Extrémní buffery (např. pro speciální HW nebo experimenty)
-		{ label: '1 GiB (1 073 741 824 B)', value: '1073741824' }
+		{ label: '128 sektorů', value: '128' },
+		{ label: '256 sektorů', value: '256' },
+		{ label: '512 sektorů', value: '512' },
+		{ label: '1024 sektorů', value: '1024' },
+		{ label: '2048 sektorů', value: '2048' },
+		{ label: '4096 sektorů', value: '4096' },
+		{ label: '8192 sektorů', value: '8192' },
+		{ label: '16384 sektorů', value: '16384' },
+		{ label: '262144 sektorů', value: '262144' }
 	];
 
 	const bytesPerSectorOptions = [

@@ -1,10 +1,10 @@
 [package]
-name = "app"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+name = "cratec"
+version = "1.0.0"
+description = "Forensic disk imaging tool designed for real-world field use, developed in cooperation with the Czech Police."
+authors = ["Martin Sladký"]
+license = "MIT"
+repository = "https://github.com/cyber-rangers/CRATEC"
 edition = "2021"
 rust-version = "1.77.2"
 

@@ -1,12 +1,7 @@
 use serde::Serialize;
 use serde_json::Value;
-use serde_json::json;
-use std::fs;
-use std::path::Path;
 use std::process::Command;
 use std::str;
-use std::thread;
-use std::time::Duration;
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn get_lsblk_json(device: &str) -> Result<Value, String> {
@@ -141,24 +136,6 @@ pub struct DiskInfo {
     pub model: Option<String>,
 }
 
-fn detect_ata_encryption(device: &str) -> bool {
-    if let Ok(output) = std::process::Command::new("sudo")
-        .arg("hdparm")
-        .arg("-I")
-        .arg(device)
-        .output()
-    {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if stdout.contains("Security:") {
-            for line in stdout.lines() {
-                if line.trim().starts_with("enabled") {
-                    return true;
-                }
-            }
-        }
-    }
-    false
-}
 
 /// Detekce HPA a DCO pomocí příkazů hdparm a blockdev.
 /// Vrací dvojici: (Option<bool> pro HPA, Option<bool> pro DCO).

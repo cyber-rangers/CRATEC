@@ -145,44 +145,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
-name = "app"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "flexi_logger",
- "futures-util",
- "hex",
- "itertools 0.14.0",
- "lazy_static",
- "log",
- "md5",
- "once_cell",
- "printpdf",
- "radix_fmt",
- "regex",
- "ring",
- "rusqlite",
- "serde",
- "serde_json",
- "serialport",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-log",
- "tauri-plugin-shell",
- "tauri-plugin-websocket",
- "tectonic",
- "tera",
- "thiserror 2.0.12",
- "tokio",
- "tokio-macros",
- "tokio-tungstenite",
- "udev",
- "uuid",
-]
-
-[[package]]
 name = "app_dirs2"
 version = "2.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -928,6 +890,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "cratec"
+version = "1.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "flexi_logger",
+ "futures-util",
+ "hex",
+ "itertools 0.14.0",
+ "lazy_static",
+ "log",
+ "md5",
+ "once_cell",
+ "printpdf",
+ "radix_fmt",
+ "regex",
+ "ring",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serialport",
+ "sysinfo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-log",
+ "tauri-plugin-shell",
+ "tauri-plugin-websocket",
+ "tectonic",
+ "tera",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-macros",
+ "tokio-tungstenite",
+ "udev",
+ "uuid",
 ]
 
 [[package]]

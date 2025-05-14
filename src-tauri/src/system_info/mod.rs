@@ -1,8 +1,6 @@
 use serde::Serialize;
 use std::process::Command;
-use rusqlite::{Connection, Result as SqlResult};
 use crate::db::DB_POOL; 
-use std::fs;
 use hex;                                
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use base64::Engine;                     

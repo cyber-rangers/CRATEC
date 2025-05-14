@@ -1,18 +1,15 @@
-use crate::db::DB_CONN;
 use crate::disk_utils::{get_block_size, get_mountpoint_for_interface, get_total_blocks}; // Přidáno
 use crate::led::LED_CONTROLLER;
-use crate::logger::{log_debug, log_error, log_warn};
+use crate::logger::{log_error, log_warn};
 use crate::report::generate_report_dcfldd;
 use crate::websocket;
-use chrono::{Local, Utc};
+use chrono::Utc;
 use lazy_static::lazy_static;
 use regex::Regex;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use std::thread;
-use std::time::Duration;
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 

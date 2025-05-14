@@ -1,9 +1,9 @@
 use crate::disk_utils::get_mountpoint_for_interface;
 use crate::led::LED_CONTROLLER;
-use crate::logger::{log_debug, log_error, log_warn};
+use crate::logger::{log_debug, log_error};
 use crate::report::generate_report_ewfacquire;
 use crate::websocket;
-use chrono::{Local, Utc};
+use chrono::Utc;
 use lazy_static::lazy_static;
 use regex::Regex;
 use rusqlite::params;
