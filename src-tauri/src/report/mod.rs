@@ -1,11 +1,9 @@
-//! Modul pro tvorbu PDF reportu (s detailními debug-výpisy)
-
 use crate::logger::{log_debug, log_error};
 use crate::system_info::get_report_system_info;
 use crate::{db::DB_POOL, disk_utils};
-use chrono::{Local, NaiveDateTime, TimeZone, Utc}; // přidej Utc
+use chrono::{Local, NaiveDateTime, TimeZone, Utc};
 use once_cell::sync::Lazy;
-use rusqlite::{Row, Statement};
+use rusqlite::Row;
 use serde_json::{Map, Value};
 use std::fs;
 use tera::{Context, Tera};

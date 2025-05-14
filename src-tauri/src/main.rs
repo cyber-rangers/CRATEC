@@ -1,5 +1,4 @@
 use tauri::Builder;
-use tauri_plugin_websocket::init as websocket_init;
 use tauri_plugin_shell::init as shell_init;
 mod copy_configs;
 mod dashboard_layout;

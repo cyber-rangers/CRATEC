@@ -1,16 +1,16 @@
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
-use crate::config::MOUNT_ROOT; // přidej tento import
+use std::time::UNIX_EPOCH;
+use crate::config::MOUNT_ROOT;
 
-/// Struktura, kterou vracíme do frontendu.
+
 #[derive(Serialize)]
 pub struct FileItem {
     pub name: String,
-    pub file_type: String, // "folder" nebo "file"
-    pub size: u64,         // velikost v bajtech
-    pub created: Option<u64>, // unix timestamp v sekundách
+    pub file_type: String, 
+    pub size: u64,         
+    pub created: Option<u64>, 
 }
 
 /// Tato funkce projde daný adresář (mountpoint) a vrátí seznam FileItem
