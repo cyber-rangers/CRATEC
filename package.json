@@ -21,6 +21,7 @@
     "prism-react-renderer": "^2.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-photo-view": "^1.2.7",
     "swiper": "^11.2.6"
   },
   "devDependencies": {
