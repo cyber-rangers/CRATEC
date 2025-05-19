@@ -1,0 +1,63 @@
+node_modules
+
+# Rust
+/target/
+/Cargo.lock
+**/*.rs.bk
+
+# SvelteKit
+/node_modules/
+/build/
+/.svelte-kit/
+/.vite/
+.vscode/
+/*.local
+.DS_Store
+
+# Tailwind CSS and Skeleton UI
+tailwind.config.js
+postcss.config.js
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.*.local
+
+# IDE files
+.idea/
+*.iml
+*.sublime-workspace
+*.sublime-project
+
+# macOS specific
+*.DS_Store
+
+# Windows specific
+Thumbs.db
+
+# Output
+.output
+.vercel
+/.svelte-kit
+/build
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Docusaurus cache
+.docusaurus/

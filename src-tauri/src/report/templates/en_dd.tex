@@ -1,0 +1,155 @@
+\documentclass[a4paper,10pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{helvet}
+\usepackage{graphicx}
+\usepackage{multirow} 
+\renewcommand{\familydefault}{\sfdefault}
+
+\geometry{margin=0.5in}
+\setlength{\parindent}{0pt}
+\pagestyle{empty}
+\titleformat{\section}{\bfseries\small}{}{0em}{}
+\titleformat{\subsection}[runin]{\bfseries}{}{0em}{}[.]
+
+\begin{document}
+\small
+
+{\LARGE\textbf{Audit Log}}\\[1em]
+
+\textbf{Software Hash:} {{ software_hash }} \hfill \textbf{Build Date:} {{ build_date }}\\
+\textbf{Unit Serial Number:} {{ serial_number }} \hfill \textbf{Time (Local):} {{ time_local }}\\
+\textbf{Date:} {{ date }}
+
+\vspace{0.2em}
+\section*{Operation Parameters}
+\begin{tabular}{@{}ll}
+Mode: & {{ mode }} \\
+Method: & {{ method }} \\
+Hash: & {{ hash_type }} \\
+Image Path: & {{ image_path }} \\
+{% if segment2_path and segment2_path | length > 0 %}
+Second Image Path: & {{ segment2_path }} \\
+{% endif %}
+LBA Count: & {{ lba_count }} \\
+Offset: & {{ offset }} \\
+Bytes to read: & {{ bytes_to_read }} \\
+Source Logical Sector Size: & {{ sector_size }} \\
+Segment Size: & {{ segment_size }} \\
+Hash Enabled: & {{ hash_enabled }} \\
+Verify Hash: & {{ verify_hash }} \\
+Unlock HPA: & {{ unlock_hpa }} \\
+Unlock DCO/ACS3: & {{ unlock_dco }} \\
+Result: & {{ result }} \\
+Start Time: & {{ time_started }} \\
+Duration: & {{ duration }} \\
+Time at Completion: & {{ time_complete }} \\
+\end{tabular}
+
+\vspace{0.2em}
+\section*{Hash Information}
+\begin{tabular}{@{}ll}
+{% for hash in hashes %}
+{{ hash.0 }}: & {{ hash.1 }} \\
+{% endfor %}
+\end{tabular}
+
+
+\section*{Case Information}
+\vspace{-0.7em}
+\begin{tabular}{@{}ll}
+Case number/File Name: & {{ case_number }} \\
+Evidence number: & {{ evidence_number }} \\
+Examiner: & {{ examiner }} \\
+Case Notes: & {{ notes }} \\
+\end{tabular}
+
+
+\section*{Segment Information}
+\vspace{-0.7em}
+\begin{tabular}{@{}l p{7cm}}
+    \multirow{5}{*}{\textbf{Destination}} 
+        & UID:         \hspace{1em} {{ segment_uid }} \\
+    & Destination:    \hspace{1em} {{ segment_path }} \\
+    & Filesystem:     \hspace{1em} {{ segment_fs }} \\
+    & Serial:         \hspace{1em} {{ segment_serial }} \\
+    & File Name:      \hspace{1em} {{ segment_file }} \\
+    {% if segment2_path %}
+    \\[-0.5em]
+    \multirow{5}{*}{\textbf{Second destination}} 
+        & UID:         \hspace{1em} {{ segment2_uid }} \\
+    & Destination:    \hspace{1em} {{ segment2_path }} \\
+    & Filesystem:     \hspace{1em} {{ segment2_fs }} \\
+    & Serial:         \hspace{1em} {{ segment2_serial }} \\
+    & File Name:      \hspace{1em} {{ segment2_file }} \\
+    {% endif %}
+\end{tabular}
+
+
+\section*{Drive Information}
+\vspace{-2em}
+{\small
+\setlength{\LTleft}{0pt}
+\begin{longtable}{|l|l|l|l|l|l|}
+\hline
+Bay & Role & Serial & Model & Filesystem & Cipher \\
+\hline
+{% for drive in drives %}
+{{ drive.bay }} & {{ drive.role }} & {{ drive.serial }} & {{ drive.model }} & {{ drive.fs }} & {{ drive.cipher }} \\
+\hline
+{% endfor %}
+\end{longtable}
+}
+
+\section*{Drive Capacities}
+\vspace{-2em} 
+{\small
+\setlength{\LTleft}{0pt}
+\begin{longtable}{|l|l|l|l|l|}
+\hline
+Bay & Serial & Model & Capacity [bytes] & Capacity [GB] \\
+\hline
+{% for cap in capacities %}
+{{ cap.bay }} & {{ cap.serial }} & {{ cap.model }} & {{ cap.capacity_bytes }} & {{ cap.capacity_gb }} \\
+\hline
+{% endfor %}
+\end{longtable}
+}
+
+\section*{Drive Encryption Information}
+\vspace{-2em} 
+{\small
+\setlength{\LTleft}{0pt}
+\begin{longtable}{|l|l|l|l|l|}
+\hline
+Bay & Role & ATA Encryption & SED Encryption & Locked \\
+\hline
+{% for enc in encryption %}
+{{ enc.bay }} & {{ enc.role }} & {{ enc.ata_encryption }} & {{ enc.sed_encryption }} & {{ enc.locked }} \\
+\hline
+{% endfor %}
+\end{longtable}
+}
+
+
+\section*{Source Partition Information}
+\vspace{-2em} 
+{\small
+\setlength{\LTleft}{0pt}
+\begin{longtable}{|c|c|c|c|c|}
+\hline
+Partition & File System & Start & End & Size \\
+\hline
+{% for part in source_partitions %}
+{{ part.index }} & {{ part.fs }} & {{ part.start }} & {{ part.end }} & {{ part.size }} \\
+\hline
+{% endfor %}
+\end{longtable}
+}
+
+\end{document}
