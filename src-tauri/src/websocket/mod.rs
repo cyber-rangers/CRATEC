@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use futures_util::SinkExt;
 use tokio::time::{sleep, Duration};
-use crate::dashboard_layout::{get_device_status, DeviceUpdate};
+use crate::dashboard_layout::get_device_status;
 use serde_json::json;
 
 // Globální seznam klientů chráněný asynchroním mutexem

@@ -20,15 +20,6 @@ fn row_to_json(row: &Row, col_names: &[String]) -> Value {
     Value::Object(obj)
 }
 
-/// Pomocná funkce pro získání i64 z Value (string nebo číslo)
-fn value_to_i64(val: &Value) -> Option<i64> {
-    match val {
-        Value::Number(n) => n.as_i64(),
-        Value::String(s) => s.parse::<i64>().ok(),
-        _ => None,
-    }
-}
-
 /// Vrátí všechny záznamy copy_process a k nim odpovídající copy_log_ewf nebo copy_log_dd podle cizího klíče
 #[command(rename_all = "snake_case")]
 pub async fn get_history() -> Result<Value, String> {

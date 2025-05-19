@@ -1,10 +1,4 @@
-// src/aide_utils.rs
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::process::{Command, Stdio};
-use std::fs;
-use std::path::PathBuf;
-use uuid::Uuid;
 use tauri::AppHandle;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandEvent;
