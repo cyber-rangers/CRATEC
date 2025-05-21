@@ -20,9 +20,7 @@ const sidebars = {
       type: 'category',
       label: 'Hardware',
       items: [
-        'hardware/komponenty',
-        'hardware/box',
-        'hardware/sestaveni',
+        'hardware/komponenty'
       ],
     },
     {

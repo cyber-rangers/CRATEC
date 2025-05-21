@@ -54,14 +54,21 @@ Před spuštěním vývojové verze je nutné mít na počítači nainstalováno
      sudo mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
      ```
 
-5. **Spuštění vývojové verze**  
+5. **Instalace Tectonic**  
+   Nainstalujte Tectonic na systém pomocí příkazu:
+
+   ```bash
+   sudo pacman -S tectonic
+   ```
+
+6. **Spuštění vývojové verze**  
    Spusťte vývojovou verzi aplikace pomocí příkazu:
 
    ```bash
    npm run tauri dev
    ```
 
-6. **Build aplikace**  
+7. **Build aplikace**  
    Pokud chcete vytvořit build aplikace, použijte příkaz:
 
    ```bash

@@ -62,6 +62,6 @@ Projekt bude i nadále aktivně rozvíjen jako otevřený nástroj pro digitáln
     <a href="../instalace/os" className="button button--lg button--block button--primary">Instalační příručka</a>
   </div>
   <div className="col col--6">
-    <a href="../hardware/sestaveni" className="button button--lg button--block button--secondary">Jak sestavit</a>
+    <a href="../hardware/komponenty" className="button button--lg button--block button--secondary">Hardware</a>
   </div>
 </div>

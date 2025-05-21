@@ -28,7 +28,7 @@ Secure Boot zatím **neaktivujte**! Tento krok provedeme až na konci celého pr
 
 ### Krok 3: Stažení instalačního skriptu
 ```bash
-curl -O https://github.com/[ODKAZ-DOPLNIT]/install.sh
+curl -LO https://github.com/cyber-rangers/CRATEC/releases/latest/download/install.sh
 chmod +x install.sh
 ```
 
@@ -57,7 +57,9 @@ Pro nápovědu:
    - Nastaví automatické odemykání LUKS přes TPM čip
    - Aktualizuje konfiguraci initramfs
    - Odstraní původní heslo pro root oddíl
-
+:::note
+Po použití `diskencryption` bude zařízení závislé výhradně na TPM čipu pro odemykání disku.
+:::
 2. **Secure Boot Preparation**
    - Vyčistí existující boot záznamy
    - Vygeneruje a nahraje vlastní Secure Boot klíče
@@ -72,9 +74,7 @@ Nastavení Secure Boot **není možné replikovat na virtuálních strojích** (
    - Nastaví automatické přihlášení a kiosk režim
    - Inicializuje kontrolu integrity souborů (AIDE)
 
-:::note
-Po použití `diskencryption` bude zařízení závislé výhradně na TPM čipu pro odemykání disku.
-:::
+
 
 ### Krok 5: Finalizace instalace
 1. Restartujte zařízení:
