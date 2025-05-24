@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunktmpdocs=self.webpackChunktmpdocs||[]).push([[1903],{1912:s=>{s.exports=JSON.parse('{"blogBasePath":"/CRATEC/blog","blogTitle":"Blog","authorsListPath":"/CRATEC/blog/authors"}')}}]);
